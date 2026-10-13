@@ -13,6 +13,12 @@ from .abi import (
     validate_provider,
     validate_runtime,
 )
+from .adapter import (
+    action_registry_from_steps,
+    container_action_for_bindings,
+    container_action_for_step,
+)
+from .bindings import StepBinding, StepBindingError, StepBindings, StepDescriptor, StepTaxonomy
 from .container import (
     ANY_STEP_REVISION,
     ActionRegistry,
@@ -26,6 +32,7 @@ from .container import (
     ContainerRuntimeService,
     add_container_runtime_service,
 )
+from .context import ExecutionContext
 from .http import (
     HttpOperationError,
     HttpOperationMapper,
@@ -36,12 +43,15 @@ from .http import (
     load_http_runner_context,
     map_http_response,
 )
+from .step import ActionStep, BaseStep, TaskStep, TriggerStep, WorkflowStep
 
 __all__ = [
     "CONTAINER_ABI",
     "PROVIDER_ABI",
     "ANY_STEP_REVISION",
     "ActionRegistry",
+    "ActionStep",
+    "BaseStep",
     "ContainerAction",
     "ContractBundle",
     "ContainerClient",
@@ -53,6 +63,7 @@ __all__ = [
     "ContainerRemoteError",
     "ContainerResult",
     "ContainerRuntimeService",
+    "ExecutionContext",
     "FailureCode",
     "HttpOperationError",
     "HttpOperationMapper",
@@ -61,8 +72,19 @@ __all__ = [
     "HttpRunnerContextError",
     "RuntimeBinding",
     "RuntimeOwnership",
+    "StepBinding",
+    "StepBindingError",
+    "StepBindings",
+    "StepDescriptor",
+    "StepTaxonomy",
+    "TaskStep",
+    "TriggerStep",
+    "WorkflowStep",
+    "action_registry_from_steps",
     "add_container_runtime_service",
     "build_http_request",
+    "container_action_for_bindings",
+    "container_action_for_step",
     "load_http_runner_context",
     "map_http_response",
     "validate_provider",
