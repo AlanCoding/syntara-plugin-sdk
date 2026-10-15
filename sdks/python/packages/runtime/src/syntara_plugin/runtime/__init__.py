@@ -15,10 +15,18 @@ from .abi import (
 )
 from .adapter import (
     action_registry_from_steps,
+    container_action_for_binding,
     container_action_for_bindings,
     container_action_for_step,
 )
-from .bindings import StepBinding, StepBindingError, StepBindings, StepDescriptor, StepTaxonomy
+from .bindings import (
+    InstalledActionManifest,
+    StepBinding,
+    StepBindingError,
+    StepBindings,
+    StepDescriptor,
+    StepTaxonomy,
+)
 from .container import (
     ANY_STEP_REVISION,
     ActionRegistry,
@@ -33,6 +41,7 @@ from .container import (
     add_container_runtime_service,
 )
 from .context import ExecutionContext
+from .execution import StepExecutionError, StepExecutor
 from .http import (
     HttpOperationError,
     HttpOperationMapper,
@@ -43,9 +52,12 @@ from .http import (
     load_http_runner_context,
     map_http_response,
 )
+from .outcome import ErrorMessage, StandardOutputWrapper
 from .step import ActionStep, BaseStep, TaskStep, TriggerStep, WorkflowStep
+from .validation import ActionInputValidationError
 
 __all__ = [
+    "ActionInputValidationError",
     "CONTAINER_ABI",
     "PROVIDER_ABI",
     "ANY_STEP_REVISION",
@@ -63,6 +75,7 @@ __all__ = [
     "ContainerRemoteError",
     "ContainerResult",
     "ContainerRuntimeService",
+    "ErrorMessage",
     "ExecutionContext",
     "FailureCode",
     "HttpOperationError",
@@ -70,13 +83,17 @@ __all__ = [
     "HttpRequest",
     "HttpRunnerContext",
     "HttpRunnerContextError",
+    "InstalledActionManifest",
     "RuntimeBinding",
     "RuntimeOwnership",
     "StepBinding",
     "StepBindingError",
     "StepBindings",
     "StepDescriptor",
+    "StepExecutionError",
+    "StepExecutor",
     "StepTaxonomy",
+    "StandardOutputWrapper",
     "TaskStep",
     "TriggerStep",
     "WorkflowStep",
@@ -84,6 +101,7 @@ __all__ = [
     "add_container_runtime_service",
     "build_http_request",
     "container_action_for_bindings",
+    "container_action_for_binding",
     "container_action_for_step",
     "load_http_runner_context",
     "map_http_response",

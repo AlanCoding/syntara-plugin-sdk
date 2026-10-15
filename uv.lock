@@ -651,16 +651,20 @@ version = "0.1.0"
 source = { editable = "sdks/python/packages/runtime" }
 dependencies = [
     { name = "grpcio" },
+    { name = "jsonschema" },
     { name = "protobuf" },
     { name = "pydantic" },
+    { name = "referencing" },
     { name = "syntara-plugin-contracts" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "grpcio", specifier = ">=1.78.0" },
+    { name = "jsonschema", specifier = ">=4.23" },
     { name = "protobuf", specifier = ">=6.31.1" },
     { name = "pydantic", specifier = ">=2.0" },
+    { name = "referencing", specifier = ">=0.37" },
     { name = "syntara-plugin-contracts", editable = "sdks/python/packages/contracts" },
 ]
 
