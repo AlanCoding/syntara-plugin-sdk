@@ -678,19 +678,26 @@ dependencies = [
     { name = "syntara-plugin-runtime" },
 ]
 
+[package.optional-dependencies]
+testing = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
+    { name = "pytest", marker = "extra == 'testing'", specifier = ">=8.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "syntara-plugin-contracts", editable = "sdks/python/packages/contracts" },
     { name = "syntara-plugin-runtime", editable = "sdks/python/packages/runtime" },
 ]
+provides-extras = ["testing"]
 
 [[package]]
 name = "syntara-plugin-sdk-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "syntara-plugin-sdk" },
+    { name = "syntara-plugin-sdk", extra = ["testing"] },
 ]
 
 [package.dev-dependencies]
@@ -703,7 +710,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "syntara-plugin-sdk", editable = "sdks/python/packages/sdk" }]
+requires-dist = [{ name = "syntara-plugin-sdk", extras = ["testing"], editable = "sdks/python/packages/sdk" }]
 
 [package.metadata.requires-dev]
 dev = [
