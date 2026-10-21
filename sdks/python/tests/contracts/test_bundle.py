@@ -17,6 +17,8 @@ from syntara_plugin.contracts import (
 from syntara_plugin.runtime import ContractBundle as RuntimeContractBundle
 from syntara_plugin.sdk import ContractBundle as SdkContractBundle
 
+from .helpers import step_document, target_metadata
+
 
 def _metadata() -> dict[str, str]:
     return {
@@ -47,10 +49,13 @@ def test_bundle_has_stable_digest_and_required_contracts() -> None:
         "provider.schema.json",
         "plugin.schema.json",
         "plugin-build-settings.schema.json",
+        "plugin-descriptor.schema.json",
         "runtime.schema.json",
+        "step.schema.json",
         "trigger-driver.schema.json",
         "trigger-event-mapping.schema.json",
         "trigger.schema.json",
+        "control.schema.json",
     }
     assert RuntimeContractBundle is SdkContractBundle
 
@@ -61,18 +66,21 @@ def test_plugin_build_settings_schema_is_descriptive_and_strict() -> None:
 
     assert schema["properties"]["registry"]["properties"]["artifactRepository"]["description"]
     assert schema["properties"]["build"]["properties"]["artifactOutput"]["description"]
-    assert schema["properties"]["build"]["properties"]["workload"]["properties"][
-        "context"
-    ]["description"]
-    assert validate_document(
-        bundle,
-        "plugin_build_settings",
-        {
-            "apiVersion": "syntara.io/v1alpha1",
-            "kind": "PluginBuildSettings",
-            "build": {"artifactOutput": "dist/plugin.oci.tar"},
-        },
-    ) == []
+    assert schema["properties"]["build"]["properties"]["workload"]["properties"]["context"][
+        "description"
+    ]
+    assert (
+        validate_document(
+            bundle,
+            "plugin_build_settings",
+            {
+                "apiVersion": "syntara.io/v1alpha1",
+                "kind": "PluginBuildSettings",
+                "build": {"artifactOutput": "dist/plugin.oci.tar"},
+            },
+        )
+        == []
+    )
     assert validate_document(
         bundle,
         "plugin_build_settings",
@@ -95,15 +103,10 @@ def test_valid_plugin_action_and_trigger_documents() -> None:
             "targets": ["actions/create-issue.yaml", "triggers/pull-request.yaml"],
         },
     }
-    action = {
-        "apiVersion": "syntara.io/v1alpha1",
-        "kind": "Action",
-        "metadata": {
-            "name": "create-issue",
-            "displayName": "Create issue",
-            "description": "Creates GitHub issues.",
-        },
-        "spec": {
+    action = step_document(
+        "Action",
+        target_metadata("create-issue", "Create issue", "Creates GitHub issues."),
+        {
             "runtime": {
                 "kind": "platform-runner",
                 "driver": "http.v1",
@@ -116,23 +119,19 @@ def test_valid_plugin_action_and_trigger_documents() -> None:
             },
             "input": {"kind": "asset", "path": "schemas/create-issue.input.json"},
             "output": {"kind": "inline", "value": {"type": "object"}},
-            "error": {"kind": "inline", "value": {"type": "object"}},
         },
-    }
-    trigger = {
-        "apiVersion": "syntara.io/v1alpha1",
-        "kind": "Trigger",
-        "metadata": {
-            "name": "pull-request",
-            "displayName": "Pull request",
-            "description": "Receives pull requests.",
-        },
-        "spec": {
+    )
+    trigger = step_document(
+        "Trigger",
+        target_metadata("pull-request", "Pull request", "Receives pull requests."),
+        {
             "driver": "webhook.v1",
+            "runtime": {"kind": "platform-runner", "driver": "webhook.v1"},
             "configuration": {"kind": "inline", "value": {"type": "object"}},
+            "input": {"kind": "inline", "value": {"type": "object"}},
             "output": {"kind": "asset", "path": "schemas/pull-request.output.json"},
         },
-    }
+    )
 
     assert validate_document(bundle, "plugin", plugin) == []
     assert validate_document(bundle, "action", action) == []
@@ -142,50 +141,132 @@ def test_valid_plugin_action_and_trigger_documents() -> None:
     assert validate_document(bundle, "action", action)
 
 
-def test_custom_workload_action_requires_a_stable_python_entry_point() -> None:
+def test_custom_runner_action_requires_a_stable_python_entry_point() -> None:
     bundle = load_bundle()
-    action = {
-        "apiVersion": "syntara.io/v1alpha1",
-        "kind": "Action",
-        "metadata": {
-            "name": "create-issue",
-            "displayName": "Create issue",
-            "description": "Creates GitHub issues.",
-        },
-        "spec": {
-            "runtime": {"kind": "custom-workload"},
+    action = step_document(
+        "Action",
+        target_metadata("create-issue", "Create issue", "Creates GitHub issues."),
+        {
+            "runtime": {"kind": "custom-runner"},
             "input": {"kind": "inline", "value": {"type": "object"}},
             "output": {"kind": "inline", "value": {"type": "object"}},
-            "error": {"kind": "inline", "value": {"type": "object"}},
         },
-    }
+    )
 
     assert "entryPoint" in " ".join(validate_document(bundle, "action", action))
     action["spec"]["runtime"]["entryPoint"] = "github.actions:CreateIssue"
     assert validate_document(bundle, "action", action) == []
 
 
-def test_action_error_document_is_optional() -> None:
+@pytest.mark.parametrize(
+    "entry_point",
+    ["steps..bad:Run", "steps.bad.:Run", "steps:Run.More", "steps:Run\n"],
+)
+def test_step_contract_rejects_malformed_entry_points(entry_point: str) -> None:
     bundle = load_bundle()
-    action = {
-        "apiVersion": "syntara.io/v1alpha1",
-        "kind": "Action",
-        "metadata": {
-            "name": "create-issue",
-            "displayName": "Create issue",
-            "description": "Creates GitHub issues.",
-        },
-        "spec": {
-            "runtime": {"kind": "custom-workload", "entryPoint": "github.actions:CreateIssue"},
+    action = step_document(
+        "Action",
+        target_metadata("create-issue", "Create issue", "Creates GitHub issues."),
+        {
+            "runtime": {"kind": "custom-runner", "entryPoint": entry_point},
             "input": {"kind": "inline", "value": {"type": "object"}},
             "output": {"kind": "inline", "value": {"type": "object"}},
         },
+    )
+
+    errors = validate_document(bundle, "action", action)
+    assert any("entryPoint" in error for error in errors)
+
+
+def test_concrete_step_types_accept_an_optional_runtime_error_schema() -> None:
+    bundle = load_bundle()
+    source = {"kind": "inline", "value": {"type": "object"}}
+    action = step_document(
+        "Action",
+        target_metadata("create-issue", "Create issue", "Creates GitHub issues."),
+        {
+            "runtime": {"kind": "custom-runner", "entryPoint": "github.actions:CreateIssue"},
+            "input": source,
+            "output": source,
+            "error": source,
+        },
+    )
+    control = step_document(
+        "Control",
+        target_metadata("control", "Control", "Runs control flow."),
+        {
+            "invocation": {"kind": "orchestration"},
+            "runtime": {"kind": "custom-runner", "entryPoint": "flows:Control"},
+            "input": source,
+            "output": source,
+            "error": source,
+        },
+    )
+    trigger = step_document(
+        "Trigger",
+        target_metadata("trigger", "Trigger", "Receives events."),
+        {
+            "driver": "webhook.v1",
+            "runtime": {"kind": "platform-runner", "driver": "webhook.v1"},
+            "configuration": source,
+            "input": source,
+            "output": source,
+            "error": source,
+        },
+    )
+
+    documents = (("action", action), ("control", control), ("trigger", trigger))
+    for kind, document in documents:
+        assert validate_document(bundle, kind, document) == []
+        assert validate_document(bundle, "step", document) == []
+
+
+def test_step_category_contracts_are_strict_and_preserve_their_distinct_semantics() -> None:
+    bundle = load_bundle()
+    source = {"kind": "inline", "value": {"type": "object"}}
+    metadata = {
+        "name": "example",
+        "displayName": "Example",
+        "description": "One category-specific Step type.",
     }
+    control = step_document(
+        "Control",
+        metadata,
+        {
+            "invocation": {"kind": "workflow-invocation", "workflow": "acme.release.deploy"},
+            "runtime": {"kind": "custom-runner", "entryPoint": "flows:Deploy"},
+            "input": source,
+            "output": source,
+        },
+    )
+    trigger = step_document(
+        "Trigger",
+        metadata,
+        {
+            "driver": "webhook.v1",
+            "runtime": {"kind": "platform-runner", "driver": "webhook.v1"},
+            "configuration": {
+                "kind": "inline",
+                "value": {"type": "object", "properties": {"secret": {"type": "string"}}},
+            },
+            "input": {
+                "kind": "inline",
+                "value": {"type": "object", "properties": {"event": {"type": "string"}}},
+            },
+            "output": {
+                "kind": "inline",
+                "value": {"type": "object", "properties": {"runId": {"type": "string"}}},
+            },
+        },
+    )
 
-    assert validate_document(bundle, "action", action) == []
+    assert validate_document(bundle, "control", control) == []
+    assert validate_document(bundle, "trigger", trigger) == []
 
-    action["spec"]["error"] = {"kind": "inline", "value": {"type": "object"}}
-    assert validate_document(bundle, "action", action) == []
+    control["spec"]["runtime"] = {"kind": "custom-runner", "entryPoint": "flows:Deploy"}
+    assert validate_document(bundle, "control", control) == []
+    trigger["spec"]["driver"] = "webhook.v0"
+    assert validate_document(bundle, "trigger", trigger)
 
 
 def test_http_mapping_contract_accepts_only_bounded_pointer_or_literal_values() -> None:
@@ -236,6 +317,11 @@ def test_fixture_corpus_exercises_valid_and_invalid_documents() -> None:
     assert any("version" in error for error in errors)
     assert any("abi" in error for error in errors)
     assert any("path" in error for error in errors)
+
+    control = json.loads((fixtures / "control.invalid.json").read_text())
+    trigger = json.loads((fixtures / "trigger.invalid.json").read_text())
+    assert validate_document(bundle, "control", control)
+    assert validate_document(bundle, "trigger", trigger)
 
 
 def test_pinned_catalog_fixture_bundle_exercises_control_plane_contracts() -> None:

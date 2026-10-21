@@ -22,14 +22,15 @@ from .abi import (
     validate_provider,
     validate_runtime,
 )
-from .action_validation import ActionInputValidationError
 from .bindings import (
-    InstalledActionManifest,
+    InstalledStepManifest,
     StepBinding,
     StepBindingError,
     StepBindings,
+    StepCategory,
     StepDescriptor,
-    StepTaxonomy,
+    StepKind,
+    to_json_document,
 )
 from .context import ExecutionContext
 from .contract_validation import (
@@ -56,16 +57,17 @@ from .http import (
     load_http_runner_context,
     map_http_response,
 )
+from .manifest_validation import ManifestInputValidationError
 from .outcome import ErrorMessage, StandardOutputWrapper
-from .step import ActionStep, BaseStep, TaskStep, TriggerStep, WorkflowStep
+from .step import ActionStep, BaseStep, ControlStep, TriggerStep
 from .validation import StepInputValidationError
 
 if TYPE_CHECKING:
     from .adapter import (
         ResultObjectStore,
-        container_action_for_step,
         container_step_for_binding,
         container_step_for_bindings,
+        container_step_for_installed_manifest,
         step_registry_from_bindings,
     )
     from .container import (
@@ -100,7 +102,7 @@ _LAZY_EXPORTS = {
     "StepRegistry": _CONTAINER_MODULE,
     "add_container_runtime_service": _CONTAINER_MODULE,
     "ResultObjectStore": _ADAPTER_MODULE,
-    "container_action_for_step": _ADAPTER_MODULE,
+    "container_step_for_installed_manifest": _ADAPTER_MODULE,
     "container_step_for_binding": _ADAPTER_MODULE,
     "container_step_for_bindings": _ADAPTER_MODULE,
     "step_registry_from_bindings": _ADAPTER_MODULE,
@@ -124,7 +126,7 @@ def __dir__() -> list[str]:
 
 __all__ = [
     "ANY_STEP_REVISION",
-    "ActionInputValidationError",
+    "ManifestInputValidationError",
     "ActionStep",
     "BaseStep",
     "CONTAINER_ABI",
@@ -152,7 +154,7 @@ __all__ = [
     "HttpRequest",
     "HttpRunnerContext",
     "HttpRunnerContextError",
-    "InstalledActionManifest",
+    "InstalledStepManifest",
     "PROVIDER_ABI",
     "ResultObjectStore",
     "RuntimeBinding",
@@ -167,17 +169,18 @@ __all__ = [
     "StepExecutor",
     "StepInputValidationError",
     "StepRegistry",
-    "StepTaxonomy",
-    "TaskStep",
+    "StepCategory",
+    "StepKind",
+    "to_json_document",
     "TriggerStep",
-    "WorkflowStep",
+    "ControlStep",
     "add_container_runtime_service",
     "build_http_request",
     "check_plugin_bindings",
     "check_step_contract",
     "check_target_binding",
     "compare_model_to_schema",
-    "container_action_for_step",
+    "container_step_for_installed_manifest",
     "container_step_for_binding",
     "container_step_for_bindings",
     "load_http_runner_context",

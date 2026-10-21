@@ -11,7 +11,11 @@ from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
-from syntara_plugin.contracts import load_bundle
+from syntara_plugin.contracts import (
+    load_bundle,
+    validate_document,
+    validate_plugin_descriptor_semantics,
+)
 
 from .artifact import (
     OCI_ARTIFACT_TYPE,
@@ -105,10 +109,14 @@ def _verify_plugin_contents(config: OciBlob, descriptor: OciBlob, bundle: OciBlo
         raise ArtifactArchiveError("plugin artifact config does not bind its plugin descriptor")
 
     descriptor_document = _json_mapping(descriptor.content, "plugin descriptor")
-    if (
-        descriptor_document.get("apiVersion") != "syntara.io/v1alpha1"
-        or descriptor_document.get("kind") != "PluginDescriptor"
-    ):
+    contract_bundle = load_bundle()
+    semantic_errors = validate_plugin_descriptor_semantics(descriptor_document)
+    if semantic_errors:
+        raise ArtifactArchiveError(
+            "plugin descriptor semantic validation failed: " + "; ".join(semantic_errors)
+        )
+    contract_errors = validate_document(contract_bundle, "plugin_descriptor", descriptor_document)
+    if contract_errors:
         raise ArtifactArchiveError("plugin descriptor does not satisfy the supported contract")
     metadata = descriptor_document.get("metadata")
     specification = descriptor_document.get("spec")
@@ -116,7 +124,7 @@ def _verify_plugin_contents(config: OciBlob, descriptor: OciBlob, bundle: OciBlo
         raise ArtifactArchiveError("plugin descriptor must contain metadata and spec objects")
     if not all(isinstance(metadata.get(key), str) and metadata[key] for key in ("namespace", "name", "version")):
         raise ArtifactArchiveError("plugin descriptor metadata is incomplete")
-    if specification.get("contractBundleDigest") != load_bundle().digest:
+    if specification.get("contractBundleDigest") != contract_bundle.digest:
         raise ArtifactArchiveError("plugin descriptor was compiled against an unsupported contract bundle")
     asset_index = specification.get("assets")
     if not isinstance(asset_index, Mapping):

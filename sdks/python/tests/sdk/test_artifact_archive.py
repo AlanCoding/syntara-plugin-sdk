@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 import tarfile
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 import pytest
+from syntara_plugin.contracts import schema_digests
 from syntara_plugin.sdk import (
     ArtifactArchiveError,
     BuildRequest,
+    PluginArtifact,
     build_plugin_artifact,
     compile_workspace,
     read_plugin_artifact_archive,
@@ -23,6 +27,41 @@ def _artifact(tmp_path: Path):
     workspace = tmp_path / "status-tools"
     assert main(["init", str(workspace)]) == 0
     return build_plugin_artifact(compile_workspace(BuildRequest(workspace / "plugin.yaml")))
+
+
+def _archive_with_descriptor_mutation(
+    artifact: PluginArtifact,
+    tmp_path: Path,
+    archive_name: str,
+    mutate: Callable[[dict[str, Any]], None],
+) -> Path:
+    """Rebuild the OCI graph after mutating the compiled descriptor document."""
+
+    descriptor_document = json.loads(artifact.plugin_manifest.content)
+    mutate(descriptor_document)
+    descriptor = OciBlob.create(
+        canonical_json_bytes(descriptor_document), artifact.plugin_manifest.descriptor.media_type
+    )
+    config_document = json.loads(artifact.config.content)
+    config_document["pluginDescriptorDigest"] = descriptor.descriptor.digest
+    config = OciBlob.create(
+        canonical_json_bytes(config_document), artifact.config.descriptor.media_type
+    )
+    manifest_document = json.loads(artifact.manifest.content)
+    manifest_document["config"] = config.descriptor.as_dict()
+    manifest_document["layers"][0] = descriptor.descriptor.as_dict()
+    manifest = OciBlob.create(
+        canonical_json_bytes(manifest_document), OCI_IMAGE_MANIFEST_MEDIA_TYPE
+    )
+    tampered = PluginArtifact(
+        config=config,
+        plugin_manifest=descriptor,
+        content_bundle=artifact.content_bundle,
+        manifest=manifest,
+    )
+    archive = tmp_path / archive_name
+    write_plugin_artifact_archive(tampered, archive)
+    return archive
 
 
 def test_archive_round_trip_is_deterministic_and_preserves_the_artifact(tmp_path: Path) -> None:
@@ -95,7 +134,9 @@ def test_archive_reader_rejects_a_self_consistent_archive_with_unbound_config(
     )
     manifest_document = json.loads(artifact.manifest.content)
     manifest_document["config"] = config.descriptor.as_dict()
-    manifest = OciBlob.create(canonical_json_bytes(manifest_document), OCI_IMAGE_MANIFEST_MEDIA_TYPE)
+    manifest = OciBlob.create(
+        canonical_json_bytes(manifest_document), OCI_IMAGE_MANIFEST_MEDIA_TYPE
+    )
     malformed = type(artifact)(
         config=config,
         plugin_manifest=artifact.plugin_manifest,
@@ -106,4 +147,105 @@ def test_archive_reader_rejects_a_self_consistent_archive_with_unbound_config(
     write_plugin_artifact_archive(malformed, archive)
 
     with pytest.raises(ArtifactArchiveError, match="does not bind its plugin descriptor"):
+        read_plugin_artifact_archive(archive)
+
+
+def test_archive_reader_rejects_a_descriptor_schema_digest_that_does_not_bind_its_schema(
+    tmp_path: Path,
+) -> None:
+    """A rebuilt OCI graph still cannot replace a schema without its canonical digest."""
+    artifact = _artifact(tmp_path)
+    def replace_input_schema(document: dict[str, Any]) -> None:
+        document["spec"]["targets"][0]["input"]["type"] = "array"
+
+    archive = _archive_with_descriptor_mutation(
+        artifact, tmp_path, "schema-digest-tampered.oci.tar", replace_input_schema
+    )
+
+    with pytest.raises(ArtifactArchiveError, match="schema digest does not match"):
+        read_plugin_artifact_archive(archive)
+
+
+def test_archive_reader_rejects_duplicate_compiled_target_identities(tmp_path: Path) -> None:
+    """An OCI-consistent descriptor cannot reuse an identity across Step types."""
+
+    artifact = _artifact(tmp_path)
+    def duplicate_target(document: dict[str, Any]) -> None:
+        targets = document["spec"]["targets"]
+        targets.append(dict(targets[0]))
+
+    archive = _archive_with_descriptor_mutation(
+        artifact, tmp_path, "duplicate-identity.oci.tar", duplicate_target
+    )
+
+    with pytest.raises(ArtifactArchiveError, match="duplicate target identities"):
+        read_plugin_artifact_archive(archive)
+
+
+@pytest.mark.parametrize("image", ["quay.io/acme/runner:latest", None])
+def test_archive_reader_rejects_unpinned_workload_images(
+    tmp_path: Path, image: str | None
+) -> None:
+    """Published workload descriptors cannot use tags or null image references."""
+
+    artifact = _artifact(tmp_path)
+
+    def add_invalid_workload(document: dict[str, Any]) -> None:
+        document["spec"]["workloads"] = {
+            "runner": {"abi": "syntara.container/v1alpha1", "image": image}
+        }
+
+    archive = _archive_with_descriptor_mutation(
+        artifact, tmp_path, "unpinned-workload.oci.tar", add_invalid_workload
+    )
+
+    with pytest.raises(ArtifactArchiveError, match="pinned to a sha256 digest"):
+        read_plugin_artifact_archive(archive)
+
+
+def test_archive_reader_rejects_a_custom_runner_without_a_workload_entry(
+    tmp_path: Path,
+) -> None:
+    """Every custom-runner target must resolve its published workload metadata."""
+
+    artifact = _artifact(tmp_path)
+
+    def remove_referenced_workload(document: dict[str, Any]) -> None:
+        target = document["spec"]["targets"][0]
+        target["runtime"] = {
+            "abi": "syntara.container/v1alpha1",
+            "entryPoint": "example.x:Request",
+            "kind": "custom-runner",
+            "workload": "runner",
+        }
+        document["spec"]["workloads"] = {}
+
+    archive = _archive_with_descriptor_mutation(
+        artifact, tmp_path, "missing-workload.oci.tar", remove_referenced_workload
+    )
+
+    with pytest.raises(ArtifactArchiveError, match="references a missing workload"):
+        read_plugin_artifact_archive(archive)
+
+
+def test_archive_reader_rejects_a_trigger_with_mismatched_platform_drivers(
+    tmp_path: Path,
+) -> None:
+    """A published Trigger cannot advertise different ingress and runtime drivers."""
+
+    artifact = _artifact(tmp_path)
+
+    def mismatch_trigger_driver(document: dict[str, Any]) -> None:
+        target = document["spec"]["targets"][0]
+        target["kind"] = "Trigger"
+        target["configuration"] = {"type": "object"}
+        target["driver"] = "webhook.v1"
+        target["runtime"] = {"kind": "platform-runner", "driver": "schedule.v1"}
+        target["schemaDigests"] = schema_digests(target)
+
+    archive = _archive_with_descriptor_mutation(
+        artifact, tmp_path, "trigger-driver-mismatch.oci.tar", mismatch_trigger_driver
+    )
+
+    with pytest.raises(ArtifactArchiveError, match="driver does not match"):
         read_plugin_artifact_archive(archive)
