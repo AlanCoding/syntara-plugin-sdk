@@ -60,6 +60,81 @@ that mount read-only in the workload container, and send only the file path to
 the plugin. The plugin never receives broker credentials or a Kubernetes API
 identity.
 
+### Runtime adapters and workload images
+
+The SDK does not publish a universal base image that contains an SDK runtime.
+The shared boundary is the versioned container ABI; each runtime adapter
+provides its own self-contained workload-image recipe. This avoids maintaining
+a polyglot image and avoids requiring one base image per supported language.
+
+The Python adapter is the
+[`syntara_plugin.runtime`](../sdks/python/packages/contracts/src/syntara_plugin/runtime/)
+module, shipped in the
+[`syntara-plugin-contracts`](../sdks/python/packages/contracts/pyproject.toml)
+distribution. A Python workload image installs that distribution, its plugin
+package, and an image-local runtime config. The config has a language-neutral envelope
+with all adapter-specific bootstrap details under `adapter`:
+
+```json
+{
+  "abi": "syntara.container/v1alpha1",
+  "adapter": {
+    "bindingsFactory": "acme_plugin.runtime:create_bindings"
+  }
+}
+```
+
+The image sets `SYNTARA_RUNTIME_CONFIG` to that file's mounted path. The
+Python adapter validates the ABI before reading its adapter settings. Other
+adapters use the same envelope and put their own bootstrap fields under
+`adapter`.
+
+`bindingsFactory` is a Python import path, not a filesystem path and not part
+of the language-neutral runtime config envelope. The adapter imports
+`acme_plugin.runtime` and calls its `create_bindings` function. That function
+takes no arguments and returns a non-empty `StepBindings` object. Every bound
+Step must use a descriptor created from its installed custom-runner manifest
+(see [Typed Python steps](#typed-python-steps)); the server rejects
+implementation-derived descriptors when it starts:
+
+```python
+from syntara_plugin.runtime import InstalledStepManifest, StepBindings, StepDescriptor
+
+def create_bindings() -> StepBindings:
+    bindings = StepBindings()
+    step = EchoStep()
+    installed_step = InstalledStepManifest.from_manifest(
+        "acme.echo.v1", installed_manifest, installed_assets
+    )
+    bindings.bind(StepDescriptor.for_installed_step(step, installed_step), step)
+    return bindings
+```
+
+The factory is plugin-specific, not Step-type-specific. A workload image may
+register one or more steps; the Execution Plane selects the exact step revision
+in each gRPC request. The final image, not the SDK repository, owns its
+runtime-config file and adapter package versions.
+
+The server listens on `127.0.0.1:50051` by default. Override the address with
+`SYNTARA_RUNTIME_GRPC_ADDRESS`; every non-loopback listener requires mutual
+TLS. Supply all three of `SYNTARA_RUNTIME_GRPC_TLS_CERT`,
+`SYNTARA_RUNTIME_GRPC_TLS_KEY`, and `SYNTARA_RUNTIME_GRPC_TLS_CLIENT_CA` when
+TLS is enabled. These values are mounted file paths, never PEM data or private
+key contents.
+
+The **container ABI** is the versioned gRPC/protobuf contract that the
+Execution Plane and a step container use to exchange execution requests,
+progress, results, and cancellation. It is not a CPU ABI. The current contract
+is defined in
+[`container.proto`](../contracts/proto/syntara_plugin/runtime/protocol/container.proto)
+and identified as `syntara.container/v1alpha1`.
+
+Final workload images, rather than a reusable SDK base layer, are the OCI
+artifacts published for deployment. They must record their immutable
+`repository@sha256:...` digest and the container ABI version they implement.
+Konflux ownership and signing apply to those final images; the SDK repository
+does not create a long-lived shared runtime image.
+
 ## Typed Python steps
 
 Custom-runner authors implement steps with the typed Python API in

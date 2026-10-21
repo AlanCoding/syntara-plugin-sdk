@@ -8,6 +8,8 @@ with the [getting-started guide](getting-started.md) instead.
 - Python 3.12 or newer
 - [uv](https://docs.astral.sh/uv/)
 - Podman only when exercising a custom-runner image build
+- Podman, OpenSSL, registry network access, and PyPI access only for the
+  opt-in runtime-image integration test
 
 From the repository root, create the development environment and run the test
 suite:
@@ -27,6 +29,18 @@ syntara-plugin validate examples/hello-world/plugin.yaml \
   --settings examples/hello-world/syntara-plugin.yaml
 ```
 
+Run the opt-in runtime-image integration test when changing the container
+bootstrap or image contract:
+
+```sh
+make test-integration
+```
+
+The test builds a temporary image from the pinned UBI Python base, installs the
+SDK runtime and a sample step from local wheels, starts the server with mutual
+TLS, and invokes the sample step over gRPC. It does not require the backend,
+Kubernetes, or the Execution Plane.
+
 ## Repository map
 
 | Location | Responsibility |
@@ -42,7 +56,7 @@ syntara-plugin validate examples/hello-world/plugin.yaml \
 ## Change contracts deliberately
 
 The schemas and protobufs are the public SDK specification. Do not implement a
-private language-specific interpretation.
+private adapter-specific interpretation.
 
 When changing a contract:
 

@@ -315,7 +315,7 @@ def _compile(
         deferred_image_bindings=tuple(
             sorted(
                 identifier
-                for identifier in _required_image_bindings(plugin.document, canonical_targets)
+                for identifier in _required_image_bindings(plugin.document)
                 if identifier not in image_bindings
             )
         ),
@@ -868,13 +868,12 @@ def _validate_bindings(
     *,
     require_image_bindings: bool,
 ) -> None:
-    has_custom_runner = any(
+    workload_image = _root_workload_image(plugin)
+    if workload_image is None and any(
         isinstance(target.get("runtime"), Mapping)
         and target["runtime"].get("kind") == "custom-runner"
         for target in targets
-    )
-    workload = plugin.get("spec", {}).get("workload")
-    if has_custom_runner and not isinstance(workload, Mapping):
+    ):
         diagnostics.append(
             _diagnostic(
                 "WORKLOAD_MISSING",
@@ -883,7 +882,16 @@ def _validate_bindings(
                 "Add spec.workload.image to the root manifest.",
             )
         )
-    required = _required_image_bindings(plugin, targets)
+    if workload_image is not None and workload_image in _provider_image_ids(plugin):
+        diagnostics.append(
+            _diagnostic(
+                "WORKLOAD_PROVIDER_IMAGE_CONFLICT",
+                f"Workload image {workload_image!r} is also used by a provider.",
+                PLUGIN_MANIFEST_FILENAME,
+                "Use a unique logical image ID for the workload and each provider.",
+            )
+        )
+    required = _required_image_bindings(plugin)
     for identifier in sorted(required):
         image = bindings.get(identifier)
         if image is None and require_image_bindings:
@@ -906,24 +914,33 @@ def _validate_bindings(
             )
 
 
-def _required_image_bindings(
-    plugin: Mapping[str, Any], targets: Sequence[Mapping[str, Any]]
-) -> set[str]:
-    """Return logical workload identifiers required by custom-runner targets."""
+def _required_image_bindings(plugin: Mapping[str, Any]) -> set[str]:
+    """Return every logical image identifier declared by the root manifest.
 
-    required: set[str] = set()
-    if any(
-        isinstance(target.get("runtime"), Mapping)
-        and target["runtime"].get("kind") == "custom-runner"
-        for target in targets
-    ):
-        workload = plugin.get("spec", {}).get("workload")
-        if isinstance(workload, Mapping):
-            required.add(str(workload.get("image")))
+    A declared workload is the plugin's one runner image, so it requires a
+    binding even when no custom-runner target uses it yet.
+    """
+
+    required = _provider_image_ids(plugin)
+    workload_image = _root_workload_image(plugin)
+    if workload_image is not None:
+        required.add(workload_image)
+    return required
+
+
+def _root_workload_image(plugin: Mapping[str, Any]) -> str | None:
+    workload = plugin.get("spec", {}).get("workload")
+    if not isinstance(workload, Mapping):
+        return None
+    return str(workload.get("image"))
+
+
+def _provider_image_ids(plugin: Mapping[str, Any]) -> set[str]:
+    images: set[str] = set()
     for provider in plugin.get("spec", {}).get("providers", []):
         if isinstance(provider, Mapping):
-            required.add(str(provider.get("image")))
-    return required
+            images.add(str(provider.get("image")))
+    return images
 
 
 def _validate_connection_contracts(

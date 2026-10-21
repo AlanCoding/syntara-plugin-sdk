@@ -31,6 +31,7 @@ _MAX_JSON_BYTES = 1_048_576
 _MAX_TIMEOUT_SECONDS = 86_400
 _MAX_STATUS_CODE = 4_294_967_295
 _PROGRESS_STATES = frozenset({"started", "heartbeat", "progress"})
+INCOMPLETE_STEP_MESSAGE = "The plugin step did not complete."
 
 # A platform-owned runner can handle any installed step that the control
 # plane has already resolved to that runner. It is a health-advertisement
@@ -169,7 +170,7 @@ class ContainerRemoteError(RuntimeError):
         outcome: str,
         source: Literal["workload", "protocol", "transport"],
     ) -> None:
-        super().__init__("The plugin step did not complete.")
+        super().__init__(INCOMPLETE_STEP_MESSAGE)
         self.code = code
         self.retryable = retryable
         self.outcome = outcome
@@ -242,7 +243,7 @@ class ContainerRuntimeService(container_pb2_grpc.ContainerServiceServicer):
         cancellation: Event | None = None
         invocation_id = request.invocation_id
         try:
-            invocation, cancellation = _invocation_from_request(request)
+            invocation, cancellation = invocation_from_request(request)
             handler = self._steps.resolve(invocation.step_revision_id)
             self._register_invocation(invocation.invocation_id, cancellation)
             # Deadline expiry and a disconnected Execution Plane both become a
@@ -250,27 +251,15 @@ class ContainerRuntimeService(container_pb2_grpc.ContainerServiceServicer):
             if not context.add_callback(cancellation.set):
                 cancellation.set()
             result = handler(invocation)
-            if invocation.cancelled:
-                raise ContainerInvocationError(
-                    FailureCode.CANCELLED,
-                    "The plugin step was cancelled.",
-                    outcome="not_completed",
-                )
-            if not isinstance(result, ContainerResult):
-                raise ContainerInvocationError(
-                    FailureCode.ABI_VIOLATION,
-                    "The plugin step returned an invalid response.",
-                    outcome="unknown",
-                )
-            yield _result_event(invocation.invocation_id, result)
+            yield terminal_execution_event(invocation, result)
         except ContainerInvocationError as error:
-            yield _failure_event(invocation_id, error)
+            yield failure_event(invocation_id, error)
         except Exception:
-            yield _failure_event(
+            yield failure_event(
                 invocation_id,
                 ContainerInvocationError(
                     FailureCode.OUTCOME_UNKNOWN,
-                    "The plugin step did not complete.",
+                    INCOMPLETE_STEP_MESSAGE,
                     outcome="unknown",
                 ),
             )
@@ -311,6 +300,37 @@ class ContainerRuntimeService(container_pb2_grpc.ContainerServiceServicer):
         with self._active_lock:
             if self._active.get(invocation_id) is cancellation:
                 del self._active[invocation_id]
+
+
+def terminal_execution_event(
+    invocation: ContainerInvocation,
+    result: ContainerResult | None,
+) -> container_pb2.ExecutionEvent:
+    try:
+        if invocation.cancelled:
+            raise ContainerInvocationError(
+                FailureCode.CANCELLED,
+                "The plugin step was cancelled.",
+                outcome="not_completed",
+            )
+        if not isinstance(result, ContainerResult):
+            raise ContainerInvocationError(
+                FailureCode.ABI_VIOLATION,
+                "The plugin step returned an invalid response.",
+                outcome="unknown",
+            )
+        return _result_event(invocation.invocation_id, result)
+    except ContainerInvocationError as error:
+        return failure_event(invocation.invocation_id, error)
+    except Exception:
+        return failure_event(
+            invocation.invocation_id,
+            ContainerInvocationError(
+                FailureCode.OUTCOME_UNKNOWN,
+                INCOMPLETE_STEP_MESSAGE,
+                outcome="unknown",
+            ),
+        )
 
 
 def add_container_runtime_service(
@@ -411,7 +431,7 @@ class ContainerClient:
         return response.accepted
 
 
-def _invocation_from_request(
+def invocation_from_request(
     request: container_pb2.ExecuteRequest,
 ) -> tuple[ContainerInvocation, Event]:
     try:
@@ -589,7 +609,7 @@ def _result_event(invocation_id: str, result: ContainerResult) -> container_pb2.
     )
 
 
-def _failure_event(
+def failure_event(
     invocation_id: str, error: ContainerInvocationError
 ) -> container_pb2.ExecutionEvent:
     return container_pb2.ExecutionEvent(

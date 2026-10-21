@@ -1,4 +1,4 @@
-.PHONY: install test test-examples lint check generate-container-protocol
+.PHONY: install test test-examples test-integration lint check generate-container-protocol
 
 install:
 	uv sync --locked --all-groups
@@ -8,6 +8,9 @@ test:
 
 test-examples:
 	uv run --no-sync pytest examples -q
+
+test-integration:
+	SYNTARA_RUNTIME_IMAGE_TESTS=1 uv run --no-sync pytest -m integration -q
 
 lint:
 	uv run --no-sync pre-commit run ruff --all-files
