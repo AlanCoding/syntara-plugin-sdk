@@ -12,6 +12,7 @@ import argparse
 import base64
 import binascii
 import json
+import os
 import re
 import sys
 from collections.abc import Mapping, Sequence
@@ -19,6 +20,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+import yaml
+from jsonschema import Draft202012Validator, SchemaError
 
 from .artifact import ArtifactBuildError, PluginArtifact, build_plugin_artifact
 from .artifact_archive import (
@@ -55,6 +59,7 @@ from .testgen import ScaffoldError, generate_step_tests
 from .workload import WorkloadBuildError, WorkloadBuildRequest, build_and_push_workload
 
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
+_FIELD_IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,127}$")
 _VERSION = re.compile(r"^(?:0|[1-9][0-9]*)\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
 _SHA256_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _MACHINE_READABLE_OUTPUT_HELP = "Print machine-readable output."
@@ -108,6 +113,14 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("--name", help="Plugin name (default: final directory name).")
     init.add_argument("--version", default="0.1.0", help="Plugin SemVer version (default: 0.1.0).")
     init.add_argument("--action", default="request", help="Initial action name (default: request).")
+    init.add_argument(
+        "--fields",
+        metavar="FIELDS",
+        help=(
+            "Comma-separated names, JSON schema, JSON field map, or JSON file path. "
+            "File paths must not contain '..' and must resolve inside the working directory."
+        ),
+    )
 
     test_init = commands.add_parser(
         "test-init",
@@ -669,7 +682,172 @@ def _invalid_init_argument(arguments: argparse.Namespace, name: str) -> str | No
     ):
         if not pattern.fullmatch(value):
             return f"{label} is not valid: {value!r}"
+    fields = arguments.fields
+    if fields is not None:
+        try:
+            _validate_fields(_fields_payload(fields))
+        except (OSError, SchemaError, ValueError) as error:
+            return str(error)
     return None
+
+
+def _fields_payload(value: str) -> dict[str, Any] | list[str]:
+    loaded = _read_fields_file(value)
+    if loaded is not None:
+        return _normalize_fields_document(json.loads(loaded))
+    if value.lstrip().startswith("{") or value.lstrip().startswith("["):
+        return _normalize_fields_document(json.loads(value))
+    return [field.strip() for field in value.split(",")]
+
+
+def _read_fields_file(value: str) -> str | None:
+    """Read a JSON fields file, or return None when ``value`` is inline data.
+
+    A leading ``@`` is removed before path checks. ``Path("@../secret.json")``
+    has no ``..`` part; the parent segment appears only after the prefix is
+    stripped. The candidate is joined onto the working directory and then
+    resolved to its real path, which must stay inside that directory. Absolute
+    paths replace the base during the join and symlinks are resolved, so both
+    are held to the same check and neither can stand in for ``..``. The file is
+    then opened through the path found by listing the working directory, never
+    through the path built from ``value``.
+    """
+
+    prefixed = value.startswith("@")
+    candidate = value[1:] if prefixed else value
+    if not prefixed and not candidate.endswith(".json"):
+        return None
+    if ".." in Path(candidate).parts:
+        raise ValueError("fields file must not contain '..' path traversal")
+    base_dir = os.path.realpath(os.getcwd())
+    message = "fields file must not escape the working directory through path traversal"
+    try:
+        filepath = os.path.realpath(os.path.join(base_dir, candidate))
+    except (OSError, RuntimeError) as error:
+        raise ValueError(message) from error
+    if os.path.commonpath([base_dir, filepath]) != base_dir:
+        raise ValueError(message)
+    if not prefixed and not os.path.isfile(filepath):
+        return None
+    discovered = _discover_contained_path(base_dir, os.path.relpath(filepath, base_dir))
+    if discovered is None:
+        raise ValueError(f"fields file does not exist: {candidate}")
+    with open(discovered, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _discover_contained_path(base_dir: str, relative: str) -> str | None:
+    """Return the entry path that matches ``relative`` under ``base_dir``.
+
+    Each segment is matched against the names listed in its parent directory,
+    starting at ``base_dir``. The returned path is built only from those listed
+    entries, so nothing from the caller's string reaches the filesystem call.
+    """
+
+    current = base_dir
+    for part in Path(relative).parts:
+        with os.scandir(current) as entries:
+            found = next((entry.path for entry in entries if entry.name == part), None)
+        if found is None:
+            return None
+        current = found
+    return current
+
+
+def _normalize_fields_document(
+    document: dict[str, Any] | list[str],
+) -> dict[str, Any] | list[str]:
+    if _is_field_map(document):
+        return _schema_from_field_map(document)
+    return document
+
+
+def _is_field_map(document: object) -> bool:
+    return (
+        isinstance(document, dict)
+        and bool(document)
+        and all(isinstance(value, dict) for value in document.values())
+        and not ("type" in document and "properties" in document)
+    )
+
+
+def _schema_from_field_map(document: dict[str, Any]) -> dict[str, Any]:
+    properties: dict[str, Any] = {}
+    required = ["resource"]
+    for name, specification in document.items():
+        if name == "resource":
+            raise ValueError("field 'resource' is already included")
+        if not _FIELD_IDENTIFIER.fullmatch(name):
+            raise ValueError(f"field is not valid: {name!r}")
+        normalized = dict(specification)
+        normalized.pop("name", None)
+        normalized.pop("required", None)
+        properties[name] = normalized
+        if specification.get("required") is True:
+            required.append(name)
+    properties["resource"] = {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "description": "Required input field.",
+    }
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": required,
+        "properties": properties,
+    }
+
+
+def _validate_fields(document: dict[str, Any] | list[str]) -> None:
+    if isinstance(document, list):
+        _validate_field_names(document)
+        return
+    if not isinstance(document, dict):
+        raise ValueError("fields JSON must be an object")
+    _validate_fields_schema(document)
+
+
+def _validate_field_names(fields: list[str]) -> None:
+    if not all(isinstance(field, str) for field in fields):
+        raise ValueError("fields JSON array entries must be strings")
+    if len(fields) != len(set(fields)):
+        raise ValueError("fields must be unique")
+    for field in fields:
+        if field == "resource":
+            raise ValueError("field 'resource' is already included")
+        if not _FIELD_IDENTIFIER.fullmatch(field):
+            raise ValueError(f"field is not valid: {field!r}")
+
+
+def _validate_fields_schema(document: dict[str, Any]) -> None:
+    if document.get("type") != "object":
+        raise ValueError("fields JSON schema must have type: object")
+    required = document.get("required", [])
+    if not isinstance(required, list) or "resource" not in required:
+        raise ValueError("fields JSON schema must require resource")
+    if not all(isinstance(field, str) for field in required):
+        raise ValueError("fields JSON schema required entries must be strings")
+    properties = document.get("properties", {})
+    if not isinstance(properties, dict) or "resource" not in properties:
+        raise ValueError("fields JSON schema must define resource")
+    _validate_resource_property(properties["resource"])
+    missing_required = sorted(set(required) - set(properties))
+    if missing_required:
+        raise ValueError(
+            "fields JSON schema must define every required property: "
+            + ", ".join(missing_required)
+        )
+    Draft202012Validator.check_schema(document)
+
+
+def _validate_resource_property(resource: object) -> None:
+    """The scaffolded action interpolates resource into the HTTP request path."""
+    if not isinstance(resource, dict) or resource.get("type") != "string":
+        raise ValueError("fields JSON schema must define resource as a string")
+    minimum = resource.get("minLength")
+    if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 1:
+        raise ValueError("fields JSON schema must set resource minLength to at least 1")
 
 
 def _write_workspace(directory: Path, arguments: argparse.Namespace, name: str) -> None:
@@ -687,7 +865,13 @@ def _write_workspace(directory: Path, arguments: argparse.Namespace, name: str) 
     (directory / action_path).write_text(
         _action_template(arguments.action, input_path), encoding="utf-8"
     )
-    (directory / input_path).write_text(_input_template(), encoding="utf-8")
+    payload = _fields_payload(arguments.fields) if arguments.fields is not None else []
+    if isinstance(payload, dict):
+        (directory / input_path).write_text(
+            yaml.safe_dump(payload, sort_keys=False), encoding="utf-8"
+        )
+    else:
+        (directory / input_path).write_text(_input_template(payload), encoding="utf-8")
     (directory / "docs" / "README.md").write_text(
         _readme_template(name, arguments.action), encoding="utf-8"
     )
@@ -1444,20 +1628,24 @@ def _action_template(action: str, input_path: Path) -> str:
     )
 
 
-def _input_template() -> str:
+def _input_template(field_names: Sequence[str]) -> str:
     """Return one bounded input schema for the generated action."""
+    fields = ["resource", *field_names]
+    required = "  - resource\n"
+    properties = "".join(
+        f"  {field}:\n"
+        "    type: string\n"
+        "    minLength: 1\n"
+        "    maxLength: 128\n"
+        f"    description: {'Required' if field == 'resource' else 'Optional'} input field.\n"
+        for field in fields
+    )
     return (
         "type: object\n"
         "description: Inputs accepted by this action.\n"
         "additionalProperties: false\n"
-        "required:\n"
-        "  - resource\n"
-        "properties:\n"
-        "  resource:\n"
-        "    type: string\n"
-        "    minLength: 1\n"
-        "    maxLength: 128\n"
-        "    description: Provider resource identifier.\n"
+        f"required:\n{required}"
+        f"properties:\n{properties}"
     )
 
 
