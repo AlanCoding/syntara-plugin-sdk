@@ -322,7 +322,7 @@ class ContainerRuntimeService(container_pb2_grpc.ContainerServiceServicer):
         def run() -> None:
             try:
                 outcome["result"] = handler(invocation)
-            except BaseException as error:  # noqa: BLE001 - surfaced on the serving thread
+            except Exception as error:  # noqa: BLE001 - surfaced on the serving thread
                 outcome["error"] = error
 
         worker = Thread(target=run, name="syntara-step", daemon=True)
@@ -338,6 +338,14 @@ class ContainerRuntimeService(container_pb2_grpc.ContainerServiceServicer):
             )
         if "error" in outcome:
             raise outcome["error"]
+        if "result" not in outcome:
+            # The worker ended without a result or a catchable error (e.g. a
+            # BaseException such as SystemExit); treat it as an unknown outcome.
+            raise ContainerInvocationError(
+                FailureCode.OUTCOME_UNKNOWN,
+                INCOMPLETE_STEP_MESSAGE,
+                outcome="unknown",
+            )
         return outcome["result"]
 
 
