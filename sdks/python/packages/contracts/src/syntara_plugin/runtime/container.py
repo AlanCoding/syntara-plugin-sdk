@@ -14,7 +14,7 @@ import json
 import re
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
-from threading import Event, Lock
+from threading import Event, Lock, Thread
 from typing import Any, Literal, NoReturn
 
 import grpc
@@ -255,7 +255,7 @@ class ContainerRuntimeService(container_pb2_grpc.ContainerServiceServicer):
             # cooperative cancellation signal visible to the step.
             if not context.add_callback(cancellation.set):
                 cancellation.set()
-            result = handler(invocation)
+            result = self._execute_step(handler, invocation)
             yield terminal_execution_event(invocation, result)
         except ContainerInvocationError as error:
             yield failure_event(invocation_id, error)
@@ -305,6 +305,40 @@ class ContainerRuntimeService(container_pb2_grpc.ContainerServiceServicer):
         with self._active_lock:
             if self._active.get(invocation_id) is cancellation:
                 del self._active[invocation_id]
+
+    def _execute_step(
+        self, handler: ContainerStepHandler, invocation: ContainerInvocation
+    ) -> ContainerResult:
+        """Run the step under its own deadline, mirroring the async runtime.
+
+        A step that outruns ``timeout_seconds`` yields a TIMEOUT outcome, distinct
+        from a cancellation. The worker is a daemon thread: a non-cooperative step
+        is signalled to stop but may linger until it returns, and must never block
+        the serving thread or process exit.
+        """
+
+        outcome: dict[str, Any] = {}
+
+        def run() -> None:
+            try:
+                outcome["result"] = handler(invocation)
+            except BaseException as error:  # noqa: BLE001 - surfaced on the serving thread
+                outcome["error"] = error
+
+        worker = Thread(target=run, name="syntara-step", daemon=True)
+        worker.start()
+        worker.join(timeout=invocation.timeout_seconds)
+        if worker.is_alive():
+            invocation.cancellation.set()
+            raise ContainerInvocationError(
+                FailureCode.TIMEOUT,
+                "The plugin step exceeded its execution timeout.",
+                retryable=True,
+                outcome="not_completed",
+            )
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome["result"]
 
 
 def terminal_execution_event(

@@ -305,6 +305,43 @@ def test_invocation_timeout_sets_the_step_cancellation_signal() -> None:
     assert raised.value.code is FailureCode.TIMEOUT
 
 
+def test_sync_runtime_reports_timeout_when_a_step_exceeds_its_budget() -> None:
+    """The sync runtime emits a TIMEOUT terminal, distinct from a cancellation."""
+
+    def slow_handler(invocation: ContainerInvocation) -> ContainerResult:
+        # Ignore cancellation and outrun the 1s budget.
+        Event().wait(timeout=5)
+        return ContainerResult(OUTPUT_SCHEMA_DIGEST, output={"ignored": True})
+
+    server = grpc.server(ThreadPoolExecutor(max_workers=2))
+    add_container_runtime_service(server, StepRegistry({"github.slow.v1": slow_handler}))
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    stub = container_pb2_grpc.ContainerServiceStub(channel)
+    request = container_pb2.ExecuteRequest(
+        invocation_id="invocation-1",
+        workflow_run_id="workflow-run-1",
+        step_revision_id="github.slow.v1",
+        runtime_abi=CONTAINER_ABI,
+        inputs_json=b"{}",
+        credential_file_paths_json=b"{}",
+        timeout_seconds=1,
+        runtime_context_json=b"{}",
+    )
+    try:
+        # No client deadline: observe the server's own terminal, not a transport timeout.
+        events = list(stub.Execute(request))
+    finally:
+        channel.close()
+        server.stop(grace=0).wait()
+
+    assert len(events) == 1
+    assert events[0].failure.code == FailureCode.TIMEOUT.value
+    assert events[0].failure.outcome == "not_completed"
+    assert events[0].failure.retryable is True
+
+
 def test_container_result_enforces_terminal_invariants() -> None:
     with pytest.raises(ValueError, match="mutually exclusive"):
         ContainerResult(
