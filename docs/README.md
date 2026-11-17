@@ -4,7 +4,8 @@ Choose the guide that matches what you are doing.
 
 | If you want to… | Read… |
 | --- | --- |
-| Install the CLI or prepare a source checkout | [Installation](installation.md) |
+| Identify a process, library, or plugin term | [Glossary](glossary.md) |
+| Install the [syntara-plugin](glossary.md#syntara-plugin) or prepare a source checkout | [Installation](installation.md) |
 | Create and package a first plugin | [Getting started](getting-started.md) |
 | Follow the whole authoring workflow, from planning a step type to composing workflows | [Step type authoring and composition guide](authoring-guide.md) |
 | Configure a plugin, publish an artifact, or update a catalog | [User guide](user-guide.md) |

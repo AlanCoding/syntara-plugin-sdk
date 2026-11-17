@@ -21,25 +21,24 @@ stub files.
 The canonical schemas and conformance fixtures are in [../../contracts](../../contracts). Do not create language-local copies of those files.
 
 The canonical container protobuf source is also in `../../contracts`. The
-Python contracts distribution contains generated protobuf bindings plus a small public
+[syntara-plugin-contracts](../../docs/glossary.md#syntara-plugin-contracts) library contains generated protobuf bindings plus a small public
 API for registering several action callables in one workload image, serving the
 container ABI, and invoking it from a trusted adapter. The API exposes only
-structured JSON data, a bounded non-secret runtime context, and mounted
-credential-file paths; it neither selects an image nor reads credential
-contents. A final Python workload image starts that server with the
-`syntara-plugin-runtime-server` console script; see
+structured JSON data and bounded non-secret runtime context. Invocation-scoped
+credential callbacks carry sensitive responses separately from business events.
+A final Python workload image starts [runtime-server](../../docs/glossary.md#runtime-server) with the
+[`syntara-plugin-runtime-server`](../../docs/glossary.md#runtime-server) console script; see
 [runtime adapters and workload images](../../docs/runtime-and-oci.md#runtime-adapters-and-workload-images).
 
 It also exposes `HttpOperationMapper`, a pure interpreter for an installed
 `http.v1` operation. It constructs only a method, origin-less relative path,
 and optional JSON body, or projects declared fields from an already parsed
 response. Endpoint selection, HTTP I/O, credentials, retry, and logging remain
-the responsibility of a Syntara-managed runner.
+outside `HttpOperationMapper`.
 
 `load_http_runner_context()` validates the runtime-only `http.v1` context that
 Syntara sends after resolving an installed action. It accepts only the driver,
-resolved operation, and output-schema digest. A managed runner must obtain its
-endpoint and credentials through separate trusted integration and broker paths.
+resolved operation, and output-schema digest. Endpoint and credential resolution remain separate trusted integration operations.
 
 Regenerate the Python bindings from the repository root after changing the
 canonical source:
@@ -58,11 +57,11 @@ with the two mirrored `requestHash` fields omitted. The catalog fixture bundle
 remains data-only: registry resolution, OCI signature verification,
 persistence, and installation belong to later Syntara control-plane increments.
 
-After compiling a workspace, an authoring client may call
+After compiling a workspace, use
 `syntara_plugin.sdk.build_plugin_artifact(result)`. The resulting
 `PluginArtifact` has the immutable OCI manifest digest plus config, canonical
 plugin-metadata, and content-bundle blobs ready for a separate signer or
-registry client. The builder is offline and performs no signing, publication,
+registry publication operation. The builder is offline and performs no signing, publication,
 or image resolution. For every `kind: asset` schema or `http.v1` mapping
 source, it preserves the exact bounded source bytes in the bundle and records
 its typed-source reference plus source-byte and canonical-document digests in
@@ -70,7 +69,7 @@ the config inventory. Inline documents remain in the canonical metadata layer.
 
 ## Offline authoring command
 
-The `syntara-plugin-sdk` distribution installs the `syntara-plugin` command.
+The [`syntara-plugin-sdk`](../../docs/glossary.md#syntara-plugin-sdk) distribution installs the [`syntara-plugin`](../../docs/glossary.md#syntara-plugin) command.
 When released, it is one public dependency: the contracts distribution provides
 the contract and runtime APIs together.
 
@@ -79,7 +78,7 @@ uv tool install syntara-plugin-sdk
 # or: python -m pip install syntara-plugin-sdk
 ```
 
-The command supports:
+The [syntara-plugin](../../docs/glossary.md#syntara-plugin) command supports:
 
 ```zsh
 syntara-plugin init ./my-plugin --namespace acme --fields title
@@ -99,7 +98,7 @@ printf '%s' "$REGISTRY_PASSWORD" | syntara-plugin catalog update ./dist/my-plugi
   --username publisher --password-stdin
 ```
 
-It is a thin adapter over the public compiler, OCI builder, archive verifier,
+The [syntara-plugin](../../docs/glossary.md#syntara-plugin) command is a thin adapter over the public compiler, OCI builder, archive verifier,
 and explicit registry publisher. For metadata-only plugins, `build` writes a
 deterministic OCI-layout archive without publishing it. For custom-workload
 plugins, `build` also builds local workload images and writes the plugin and

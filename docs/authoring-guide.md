@@ -49,11 +49,11 @@ flowchart LR
 | Stage | You decide or produce | Main command |
 | --- | --- | --- |
 | [Plan](#plan-your-step-type) | The step type category, the runner, and the step type boundaries | None |
-| [Declare](#declare-the-contract) | Manifests and JSON Schemas | `syntara-plugin init` |
+| [Declare](#declare-the-contract) | Manifests and JSON Schemas | [`syntara-plugin init`](glossary.md#syntara-plugin) |
 | [Implement](#implement-the-step) | A typed Python class (custom runner only) | None |
 | [Verify](#verify-locally) | Evidence that the step type behaves as declared | `validate`, `run`, `pytest` |
-| [Package](#package-the-plugin) | A deterministic OCI archive | `syntara-plugin build` |
-| [Publish](#publish-the-release) | A discoverable catalog release | `syntara-plugin publish` |
+| [Package](#package-the-plugin) | A deterministic OCI archive | [`syntara-plugin build`](glossary.md#syntara-plugin) |
+| [Publish](#publish-the-release) | A discoverable catalog release | [`syntara-plugin publish`](glossary.md#syntara-plugin) |
 
 After the journey, [Compose step types into workflows](#compose-step-types-into-workflows)
 gives design guidance, and
@@ -81,18 +81,9 @@ If you have not created a plugin before, complete
 
 ## Key terms
 
-| Term | Meaning |
-| --- | --- |
-| Plugin | A versioned release that declares step types, integration types, credential recipes, and documentation. Its inventory is `plugin.yaml`. |
-| Step type | One catalog capability, such as **Create issue**, declared by a manifest under `steps/`. |
-| Category | The role of a step type: `action`, `control`, or `trigger`. The manifest `kind` is `Action`, `Control`, or `Trigger`. |
-| Runner | What executes the step type: the Syntara `platform-runner` or your own `custom-runner`. |
-| Entry point | The `module:Class` handle of a custom-runner implementation, such as `python_steps.create_issue:CreateIssueStep`. |
-| Workload image | A container image that holds custom-runner code. A plugin may declare multiple logical workloads and image options. |
-| Step identity | The stable name `namespace.plugin.step`, such as `example.python-steps.create-issue`. |
-
-For the complete vocabulary, see
-[Terms and execution model](plugin-language.md#terms-and-execution-model).
+The [glossary](glossary.md) defines actor processes, libraries, and plugin terms.
+For how step types, categories, and runner ownership fit together, see the
+[execution model](plugin-language.md#terms-and-execution-model).
 
 ## Plan your step type
 
@@ -133,7 +124,7 @@ not as a general label for every capability.
 | Can one HTTP call to a provider do the job? | Yes: declare it with the `http.v1` driver. | Use a custom runner when it cannot. |
 | Do you write code? | No. The manifest is the whole step type. | Yes: a typed Python class. |
 | Who owns the runtime image? | Syntara. | You do; the build pins its digest. |
-| Can you run it with `syntara-plugin run`? | No. Use `validate` and `inspect`. | Yes. |
+| Can you run it with [`syntara-plugin run`](glossary.md#syntara-plugin)? | No. Use `validate` and `inspect`. | Yes. |
 
 Prefer `platform-runner` whenever it is enough: you maintain no
 code, and the platform supplies the endpoint and credentials after
@@ -378,16 +369,15 @@ practices:
 - Mark secret input fields with `writeOnly: true` or `format: password`.
 
 > **Important:** Marking a field as secret controls local redaction in
-> `syntara-plugin run`, which also masks fields with credential-like names
+> [`syntara-plugin run`](glossary.md#syntara-plugin), which also masks fields with credential-like names
 > such as `api_token`. It is not a credential delivery mechanism. Production
 > credentials belong in an
 > [`IntegrationType`](plugin-language.md#kind-integrationtype) and its
 > [`CredentialRecipe`](plugin-language.md#kind-credentialrecipe), and
-> `syntara-plugin run --credential` delivers one of those locally as a
-> read-only file; see
+> [`syntara-plugin run --credential`](glossary.md#syntara-plugin) supplies one of those locally through invocation-scoped callbacks; see
 > [Supplying credentials](running-locally.md#supplying-credentials).
-> Production delivery by the Execution Plane, and the typed accessor a step
-> type would use to read the file, are still follow-on work. Either way, do not
+> Step implementations read credentials with `context.credential(name).read()`.
+> Production delivery by [ep-worker](glossary.md#ep-worker) remains follow-on work. Do not
 > copy the example's `api_token` input for real credentials.
 
 For every manifest field, see the
@@ -401,7 +391,7 @@ To start a plugin of your own, scaffold a workspace:
 syntara-plugin init ./incident-tracker --namespace acme --fields title
 ```
 
-The command creates `plugin.yaml`, `syntara-plugin.yaml`, `docs/README.md`,
+The [syntara-plugin](glossary.md#syntara-plugin) command creates `plugin.yaml`, `syntara-plugin.yaml`, `docs/README.md`,
 `steps/request/manifest.yaml`, and `schemas/request.input.yaml`. The
 generated step type is a platform-runner `http.v1` Action whose input schema has
 a required `resource` field plus the optional `title` field that `--fields`
@@ -416,15 +406,15 @@ syntara-plugin init ./incident-tracker --namespace acme \
 ```
 
 This adds the workload declaration and build settings, a typed Python Action,
- runtime configuration, a Containerfile, and local tests. Its runtime loads
- the packaged manifests through the packaged-manifest binding helper. See
- [Getting started](getting-started.md#create-a-python-custom-runner)
+runtime configuration, a Containerfile, and local tests. The [runtime-server](glossary.md#runtime-server) loads
+the packaged manifests through the packaged-manifest binding helper. See
+[Getting started](getting-started.md#create-a-python-custom-runner)
 for running the scaffold and preparing its image. Review generated models and
 schemas together, particularly when using complex JSON Schema constructs.
 
 Building this workspace into a workload image additionally needs a runtime
-config naming a bindings factory, a `Containerfile` that starts the SDK
-runtime server, and the packaged plugin manifests. See
+config naming a bindings factory, a `Containerfile` that starts
+[runtime-server](glossary.md#runtime-server), and the packaged plugin manifests. See
 [Running locally](running-locally.md#image-mode) and
 [the runtime and OCI model](runtime-and-oci.md#runtime-adapters-and-workload-images).
 
@@ -617,7 +607,7 @@ whether its side effects occurred. Never raise it with `unknown`; an
 unexpected exception already becomes a terminal `OUTCOME_UNKNOWN` failure
 without leaking its text. `provider_code` optionally names the provider
 (`tracker`, `github`) for correlation; it appears in the run report and on
-every client surface that carries the failure. Prefer `StepFailure` for
+every API surface that exposes the failure. Prefer `StepFailure` for
 business-level rejections the workflow user should see as a result, and
 reserve `ContainerInvocationError` for terminal invocation outcomes.
 
@@ -643,14 +633,14 @@ something that the previous one cannot:
 
 | Tool | Proves | Does not prove |
 | --- | --- | --- |
-| `syntara-plugin validate` | Manifests match the contracts and each other. | Anything about Python code. |
-| `syntara-plugin inspect` | The compiled descriptor is what you expect. | Anything about Python code. |
-| `syntara-plugin run` | One invocation works over the container ABI, and the models match the manifest. | Edge cases and regressions. |
+| [`syntara-plugin validate`](glossary.md#syntara-plugin) | Manifests match the contracts and each other. | Anything about Python code. |
+| [`syntara-plugin inspect`](glossary.md#syntara-plugin) | The compiled descriptor is what you expect. | Anything about Python code. |
+| [`syntara-plugin run`](glossary.md#syntara-plugin) | One invocation works over the container ABI, and the models match the manifest. | Edge cases and regressions. |
 | `pytest` with the testing harness | Valid input reaches `run()` once, invalid input never does, both execution paths agree, and secrets do not leak. | End-to-end platform execution. |
 
 > **Important:** `validate` and `build` never import your Python code. A
 > misspelled entry point or a model that drifts from the manifest passes both.
-> For custom-runner step types, run `syntara-plugin run` or `pytest` before you
+> For custom-runner step types, run [`syntara-plugin run`](glossary.md#syntara-plugin) or `pytest` before you
 > package.
 
 ### Validate and inspect
@@ -661,7 +651,7 @@ To check the manifests, validate the workspace:
 syntara-plugin validate examples/python-steps/plugin.yaml
 ```
 
-The command prints `Valid:` followed by the manifest path and the descriptor
+The [syntara-plugin](glossary.md#syntara-plugin) command prints `Valid:` followed by the manifest path and the descriptor
 digest. To review the compiled descriptor, inspect the workspace. Like
 `build`, `inspect` requires an immutable image binding for each custom-runner
 workload image:
@@ -677,12 +667,12 @@ A platform-runner plugin needs no binding:
 syntara-plugin inspect examples/hello-world/plugin.yaml
 ```
 
-The command prints the compiled `PluginDescriptor` as JSON. Check the
+The [syntara-plugin](glossary.md#syntara-plugin) command prints the compiled `PluginDescriptor` as JSON. Check the
 `identity`, `runtime`, and resolved schemas of each target.
 
 ### Run one step type
 
-The `run` command executes one custom-runner step type from your source, through
+The [`syntara-plugin run`](glossary.md#syntara-plugin) command executes one custom-runner step type from your source, through
 the same container ABI that the platform uses. To run a step type, follow these
 steps:
 
@@ -692,7 +682,7 @@ steps:
    syntara-plugin run --manifest examples/python-steps/plugin.yaml create-issue
    ```
 
-   The command executes nothing. It prints a schema-shaped template on
+   The [syntara-plugin](glossary.md#syntara-plugin) command executes nothing. It prints a schema-shaped template on
    standard output, a field summary on standard error, and exits with status
    `2`. The template is not business-valid; fill in real values.
 
@@ -726,7 +716,7 @@ steps:
      --input '{"priority": "urgent"}'
    ```
 
-   The command reports every violation and exits with status `2`:
+   The [syntara-plugin](glossary.md#syntara-plugin) command reports every violation and exits with status `2`:
 
    ```text
    error: input does not satisfy the declared schema for example.python-steps.create-issue
@@ -744,7 +734,7 @@ troubleshooting, see [Run a step type locally](running-locally.md).
 
 ### Generate a test suite
 
-The `test-init` command generates one test module per custom-runner target.
+The [`syntara-plugin test-init`](glossary.md#syntara-plugin) command generates one test module per custom-runner target.
 To generate and complete a suite, follow these steps:
 
 1. Copy the example workspace, so that the example in the repository stays
@@ -792,7 +782,7 @@ The tests use the harness fixtures, which pytest loads automatically when the
 ### Prove both execution paths agree
 
 The harness runs a step type two ways: directly in Python with `invoke_step`, and
-over a loopback gRPC server with `invoke_step_in_container`. The
+through an embedded [runtime-server](glossary.md#runtime-server) with `invoke_step_in_container`. The
 `check_step_conformance` helper checks the core guarantees in one call. The
 following test is from
 `examples/python-steps/tests/test_create_issue_action.py`:
@@ -894,7 +884,7 @@ flowchart LR
     classDef active fill:#0078d4,stroke:#005a9e,stroke-width:3px,color:#ffffff
 ```
 
-Publish the exact archive that you verified. The `publish` command does not
+Publish the exact archive that you verified. The [`syntara-plugin publish`](glossary.md#syntara-plugin) command does not
 recompile. It uploads the archive and advances the configured catalog index,
 so that the platform can discover the release.
 
@@ -915,7 +905,7 @@ so that the platform can discover the release.
      expiresInHours: 168
    ```
 
-   The command checks the catalog settings only after it uploads the
+   The [syntara-plugin](glossary.md#syntara-plugin) command checks the catalog settings only after it uploads the
    artifact, so configure all of them before you publish. Never store a
    password or token in this file.
 
@@ -1006,7 +996,7 @@ step type:
   after a timeout can open a duplicate issue. When the provider supports
   idempotency keys, derive the key from input values that stay the same
   across retries. When you cannot tell whether the operation happened, use
-  `retryable=False`; the runtime reports unexpected exceptions as
+  `retryable=False`; [syntara-plugin-contracts](glossary.md#syntara-plugin-contracts) reports unexpected exceptions as
   `OUTCOME_UNKNOWN`.
 - Split workflow step types at retry boundaries, as in Option B.
 
@@ -1112,17 +1102,15 @@ its installed manifest, so that the manifest schema stays the execution
 contract. The SDK publishes
 no universal base image; each language adapter provides its own image recipe
 on top of the shared container ABI. The Python adapter is
-`syntara_plugin.runtime` in the `syntara-plugin-contracts` distribution. For
+`syntara_plugin.runtime` in the [`syntara-plugin-contracts`](glossary.md#syntara-plugin-contracts) distribution. For
 more information, see
 [Runtime adapters and workload images](runtime-and-oci.md#runtime-adapters-and-workload-images).
 
 ### Execution placement
 
 The entry point is an implementation identity, not a placement decision:
-platform policy can run the step type in the selected host execution path or
-delegate it to the Execution Plane. The category does not choose placement
-either. Do not write code that depends on the host, network location, or
-process that runs it.
+Syntara policy chooses where execution occurs. Step type code should not
+depend on a particular machine, network location, or execution process.
 
 ### Direct execution and the container path
 
@@ -1132,8 +1120,8 @@ same single call to `run()`:
 - **Direct execution** (`StepExecutor`, `invoke_step`) runs the typed
   implementation in-process, without gRPC. See
   [Minimal direct execution](runtime-and-oci.md#minimal-direct-execution).
-- **The container path** (`syntara-plugin run`, `invoke_step_in_container`,
-  and the workload image) runs the same implementation behind the
+- **The container path** ([`syntara-plugin run`](glossary.md#syntara-plugin), `invoke_step_in_container`,
+  and [runtime-server](glossary.md#runtime-server) in a workload image) runs the same implementation behind the
   `syntara.container/v1alpha1` gRPC protocol.
 
 The two paths report outcomes differently:

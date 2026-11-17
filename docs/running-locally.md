@@ -1,8 +1,8 @@
 # Run a step type locally
 
-This page explains the `syntara-plugin run` command: how to validate an
+This page explains the [`syntara-plugin run`](glossary.md#syntara-plugin) command: how to validate an
 invocation's inputs and execute one custom-runner step type on your own machine,
-either from your workspace source or against a running workload runtime,
+either from your workspace source or against a running [runtime-server](glossary.md#runtime-server),
 without a cluster or a full end-to-end test suite.
 
 ## Objective
@@ -12,7 +12,7 @@ After this page you can:
 - print the input contract of one step type and a schema-shaped template for it;
 - validate inputs before anything executes;
 - run the step type from source and read its result;
-- run the same step type against an already-running workload runtime.
+- run the same step type against an already-running [runtime-server](glossary.md#runtime-server).
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ After this page you can:
   custom-runner step type target. The
   [python-steps example](../examples/python-steps) is used throughout; clone
   this repository to follow along.
-- The CLI installed: see [Installation](installation.md).
+- [syntara-plugin](glossary.md#syntara-plugin) installed: see [Installation](installation.md).
 
 ## Quickstart
 
@@ -31,7 +31,7 @@ From the repository root, run one of the example's targets without inputs
 syntara-plugin run --manifest examples/python-steps/plugin.yaml create-issue
 ```
 
-The command does not execute anything. It prints a template on stdout
+The [syntara-plugin](glossary.md#syntara-plugin) command does not execute anything. It prints a template on stdout
 (sensitive fields are omitted rather than filled with their declared
 defaults):
 
@@ -86,13 +86,13 @@ The exit status is `0` when the step type completes with status `0`.
 
 ## Selecting the target
 
-The command resolves the target to run in this order:
+The [syntara-plugin](glossary.md#syntara-plugin) command resolves the target to run in this order:
 
 1. the full step type identity, for example `example.python-steps.create-issue`;
 2. the `module:Class` entry point, for example `python_steps.create_issue:CreateIssueStep`;
 3. a unique short name, for example `create-issue`.
 
-When you omit the target, the command infers it only when the workspace
+When you omit the target, the [syntara-plugin](glossary.md#syntara-plugin) command infers it only when the workspace
 declares exactly one runnable target. Otherwise it lists the choices and exits
 `2` without executing:
 
@@ -106,8 +106,8 @@ Next:
 ```
 
 Only custom-runner targets can run locally. A platform-runner target is a
-declarative manifest executed by Syntara's managed runner; the command
-explains this and suggests `syntara-plugin inspect` instead of executing it.
+declarative manifest executed by a Syntara-managed implementation; the command
+explains this and suggests [`syntara-plugin inspect`](glossary.md#syntara-plugin) instead of executing it.
 
 The workspace defaults to `./plugin.yaml` in the current directory. Pass
 `--manifest PATH` (a file or its directory) to name another one, or set
@@ -128,7 +128,7 @@ Inputs arrive in one of three ways:
 Before anything executes, the parsed input is validated against the compiled
 manifest's input schema (JSON Schema Draft 2020-12; format annotations are
 checked for the formats the installed `jsonschema` build validates). Every
-violation is reported with its RFC 6901 JSON Pointer, and no server is started:
+violation is reported with its RFC 6901 JSON Pointer, and no [runtime-server](glossary.md#runtime-server) is started:
 
 ```text
 error: input does not satisfy the declared schema for example.python-steps.create-issue
@@ -200,7 +200,7 @@ local users' view of `/proc/<pid>/cmdline` in the first place. When a
 managed container dies before becoming healthy, its last log lines are
 printed to explain why; those lines come from the image itself and are
 secret-scrubbed — each full line, before any length limit is applied — so
-a credential the workload printed as it died cannot leak, though anything
+a credential the [runtime-server](glossary.md#runtime-server) printed as it died cannot leak, though anything
 else the image printed is carried through.
 
 ## Supplying credentials
@@ -215,8 +215,8 @@ workspace, because a local run compiles nothing else.
 | --- | --- | --- |
 | Standard input | `--credential NAME=-` | The primary path: the value never reaches disk or your shell history. One credential per run can use it. |
 | File | `--credential NAME=file:PATH` | Several per run. Refused when the path is inside the workspace; warns when other local users can read it. |
-| Environment | `--credential NAME=env:VAR` | Convenient in a local shell or CI. The CLI reads the variable; the step type implementation never sees one. |
-| Inline | — | Refused. A value on the command line is visible in your shell history and in `/proc/<pid>/cmdline`, the same reason `--input-file` exists. |
+| Environment | `--credential NAME=env:VAR` | Convenient in a local shell or CI. [syntara-plugin](glossary.md#syntara-plugin) reads the variable; the step type implementation never sees one. |
+| Inline | — | Refused. A value on the [syntara-plugin](glossary.md#syntara-plugin) command line is visible in your shell history and in `/proc/<pid>/cmdline`, the same reason `--input-file` exists. |
 
 ```sh
 printf '%s' "$TOKEN" | syntara-plugin run --manifest plugin.yaml create-issue \
@@ -245,7 +245,7 @@ and the violated constraint and never the value.
 Both modes hold the supplied document in memory and deliver it through the
 same invocation callback used in production. The step calls
 `context.credential(name).read()`; no credential delivery file is written or
-mounted. Source mode uses a private local socket; a CLI-managed image uses
+mounted. Source mode uses a private local socket; an image managed by [syntara-plugin](glossary.md#syntara-plugin) uses
 mutually authenticated TLS. The response is separate from business events.
 See [ADR 0011](../.sdlc/adrs/0011-credential-callback.md).
 
@@ -273,16 +273,16 @@ local diagnostic stderr stream. The SDK does not alter the corresponding wire
 `LogBatch`; never log credential values or other secrets.
 
 `--credential` cannot be combined with `--address` or the `--tls-*` options:
-the CLI only supplies credentials to a runtime it starts and authenticates.
+[syntara-plugin](glossary.md#syntara-plugin) only supplies credentials to a [runtime-server](glossary.md#runtime-server) it starts and authenticates.
 
 ## Execution modes
 
 Both modes execute through the SDK's `ContainerClient` over real gRPC, call
-`Health` first to check the ABI identifier and that the runtime advertises the
+`Health` first to check the ABI identifier and that [runtime-server](glossary.md#runtime-server) advertises the
 requested step type, and use a 60 second invocation timeout with an empty
 runtime context; credentials are supplied only when the step requests them.
 The identifier alone cannot distinguish the earlier unary `v1alpha1` protocol;
-the client and workload must both implement the current callback protocol.
+[syntara-plugin](glossary.md#syntara-plugin) and [runtime-server](glossary.md#runtime-server) must both implement the current callback protocol.
 
 ### Source mode (default)
 
@@ -293,11 +293,12 @@ syntara-plugin run --manifest examples/python-steps/plugin.yaml create-issue --i
 Source mode compiles the workspace with the same compiler as `validate`,
 makes the workspace importable, binds the implementation through the trusted
 installed-manifest path (the same compile, install, and drift-check used by
-the [testing harness](testing.md)), and serves an in-process gRPC runtime over a private Unix socket. The step type executes over the container ABI exactly as the platform
-would invoke it, and the runtime stops when the result arrives.
+the [testing harness](testing.md)), and embeds [runtime-server](glossary.md#runtime-server) in the [syntara-plugin](glossary.md#syntara-plugin) process over a private Unix
+socket. The step type executes through the container ABI, and [syntara-plugin](glossary.md#syntara-plugin)
+stops the embedded [runtime-server](glossary.md#runtime-server) when the result arrives.
 
 Making the workspace importable means its root directory is inserted at the
-front of the process's module search path for this invocation, exactly like
+front of the [syntara-plugin](glossary.md#syntara-plugin) module search path for this invocation, exactly like
 the generated test suites' `conftest.py` shim: your `module:Class` entry
 point must resolve against the workspace, and a workspace file that shadows a
 standard-library or SDK module name would take precedence during the run.
@@ -311,8 +312,8 @@ syntara-plugin run --mode image \
   --manifest examples/python-steps/plugin.yaml create-issue --input-file input.json
 ```
 
-Image mode executes through `ContainerClient` against a workload runtime
-serving the container ABI. **By default the CLI manages the container for
+Image mode executes through `ContainerClient` against [runtime-server](glossary.md#runtime-server)
+serving the container ABI. **By default [syntara-plugin](glossary.md#syntara-plugin) manages the container for
 you**: it detects Podman (preferred) or Docker, resolves the selected workload
 image, runs it, waits for its health endpoint, executes, and removes the
 container afterwards. For the multi-image release flow, pass the built release
@@ -334,35 +335,35 @@ Image:          python-steps-workload
 ```
 
 The managed container publishes an ephemeral loopback port secured with
-mutual TLS generated for this invocation (one throwaway CA plus server and
-client certificates, removed afterwards), which works everywhere published
+mutual TLS generated for this invocation (one throwaway CA plus certificates for [runtime-server](glossary.md#runtime-server) and
+[syntara-plugin](glossary.md#syntara-plugin), removed afterwards), which works everywhere published
 ports do, including Docker Desktop. openssl is required for the managed
 path: there is deliberately no cleartext fallback, because a fixed-port
-unauthenticated listener would let any local process impersonate the runtime.
+unauthenticated listener would let any local process impersonate [runtime-server](glossary.md#runtime-server).
 The managed path never builds or pulls images: a missing image is an error
 with the fix, not a side effect, because building requires the author-owned
-Containerfile and bindings factory the CLI cannot infer. Build the release
-first with `syntara-plugin build`; for a RuntimeBinding release, use the
+Containerfile and bindings factory [syntara-plugin](glossary.md#syntara-plugin) cannot infer. Build the release
+first with [`syntara-plugin build`](glossary.md#syntara-plugin); for a RuntimeBinding release, use the
 inventory and option shown above. The legacy single-image path uses the image
 reference recorded in the compiled descriptor. A
-container whose process exits before its runtime becomes healthy is reported
+[runtime-server](glossary.md#runtime-server) that exits before becoming healthy is reported
 immediately, with its exit status and the last lines of its log, instead of
 waiting out the startup window. The
 managed path executes the image your manifest names with the same trust as
 running it by hand: only point it at workload images you built yourself. If
-neither engine is usable, or the container cannot start, the command reports
-one clear error with the next step instead of a traceback. If the CLI is
+neither engine is usable, or the container cannot start, [syntara-plugin](glossary.md#syntara-plugin) reports
+one clear error with the next step instead of a traceback. If [syntara-plugin](glossary.md#syntara-plugin) is
 killed forcefully (`kill -9`) a managed container, its temporary TLS
 directory (`syntara-run-tls-*`), or a source-mode runtime directory
 (`syntara-run-runtime-*`) can be left behind; find and remove the container
 with `podman ps --filter name=syntara-run-` and `podman rm -f <name>`, and
 the directories from your temporary directory.
 
-To manage the runtime yourself, pass `--address` and all three `--tls-*`
-options for mutual TLS; then the CLI only connects and never starts anything. Two ways to
-obtain such a runtime:
+To manage [runtime-server](glossary.md#runtime-server) yourself, pass `--address` and all three `--tls-*`
+options for mutual TLS; then [syntara-plugin](glossary.md#syntara-plugin) only connects and never starts anything. Two ways to
+start [runtime-server](glossary.md#runtime-server):
 
-1. **The runtime server console script**, entirely on your machine. Write a
+1. **The [runtime-server](glossary.md#runtime-server) console script**, entirely on your machine. Write a
    runtime config naming a bindings factory for your steps:
 
    ```json
@@ -393,19 +394,19 @@ obtain such a runtime:
    runners must match the image's packaged registration manifest. This bootstrap
    file identifies installed bindings only; the gRPC request supplies the
    invocation/run IDs, input, timeout, and runtime
-   context. A runtime you start this way cannot be given `--credential`: the
-   command does not own it and cannot mount a file into it. This is also the image pattern the managed path expects:
-   install the `syntara-plugin-contracts` wheel on a Python base image, copy
+   context. A [runtime-server](glossary.md#runtime-server) you start this way cannot be given `--credential`:
+   [syntara-plugin](glossary.md#syntara-plugin) does not own that [runtime-server](glossary.md#runtime-server) and cannot authenticate credential delivery to it. This is also the image pattern the managed path expects:
+   install the [`syntara-plugin-contracts`](glossary.md#syntara-plugin-contracts) wheel on a Python base image, copy
    your plugin sources and runtime config, and set `SYNTARA_RUNTIME_CONFIG`
    and `PYTHONPATH`. Managed image mode supplies the selected local compiled
    revision as read-only execution data when starting the container.
 
 2. **A Podman container with a published port and mutual TLS.** Every TCP
-   runtime listener requires mTLS by design. Publish
-   `127.0.0.1:<host-port>:50051`, configure the server's TLS material through
+   [runtime-server](glossary.md#runtime-server) listener requires mTLS by design. Publish
+   `127.0.0.1:<host-port>:50051`, configure the [runtime-server](glossary.md#runtime-server) TLS material through
    `SYNTARA_RUNTIME_GRPC_TLS_CERT`, `SYNTARA_RUNTIME_GRPC_TLS_KEY`, and
    `SYNTARA_RUNTIME_GRPC_TLS_CLIENT_CA`, generate one local CA that signs both the
-   server and client certificates, and connect with:
+   [runtime-server](glossary.md#runtime-server) and [syntara-plugin](glossary.md#syntara-plugin) certificates, and connect with:
 
    ```sh
    syntara-plugin run --mode image --address 127.0.0.1:<host-port> \
@@ -414,10 +415,10 @@ obtain such a runtime:
    ```
 
    The three `--tls-*` options must be supplied together, mirroring the
-   runtime server's own all-or-nothing TLS rule.
+   [runtime-server](glossary.md#runtime-server) TLS configuration rule.
 
 In both paths the local compiled manifest supplies the input schema and
-target identity, and the documented assumption is that the runtime was built
+target identity, and the documented assumption is that [runtime-server](glossary.md#runtime-server) was built
 from the same workspace. If it was not, the health check and the
 advertised-identity check produce an actionable error instead of a confusing
 failure.
@@ -466,7 +467,7 @@ A step type that raises any other unexpected exception is caught and reported
 as a safe terminal `OUTCOME_UNKNOWN` failure instead of a result: the
 container ABI never carries exception text, because it may contain secrets or
 internal details. In source mode the exception happened
-in your own process, so the CLI captures the traceback locally and attaches
+in the [syntara-plugin](glossary.md#syntara-plugin) process, so [syntara-plugin](glossary.md#syntara-plugin) captures the traceback locally and attaches
 it:
 
 ```text
@@ -484,8 +485,8 @@ Error detail:
   RuntimeError: unexpected kaboom
 ```
 
-In image mode the detail cannot be retrieved (the remote runtime discards
-it); the CLI says so and suggests rerunning with `--mode source`. To debug a
+In image mode the detail cannot be retrieved ([runtime-server](glossary.md#runtime-server) discards
+it); the [syntara-plugin](glossary.md#syntara-plugin) says so and suggests rerunning with `--mode source`. To debug a
 failing step type programmatically, the [testing harness](testing.md) also
 captures the raised exception in `StepOutcome.raised`.
 
@@ -527,7 +528,7 @@ Every failure prints the problem and the next command. The complete map:
 | Situation | Message and next step | Exit |
 | --- | --- | --- |
 | No `plugin.yaml` in the current directory | Run from a plugin workspace or pass `--manifest`. | 2 |
-| Workspace does not compile | Compiler diagnostics, then `syntara-plugin validate`. | 1 |
+| Workspace does not compile | Compiler diagnostics, then [`syntara-plugin validate`](glossary.md#syntara-plugin). | 1 |
 | No runnable target | Only custom-runner targets run locally; see `inspect`. | 2 |
 | Multiple runnable targets | The target list and a concrete `run` command. | 2 |
 | Unknown or ambiguous target | The matches and the full-identity form. | 2 |
@@ -536,7 +537,7 @@ Every failure prints the problem and the next command. The complete map:
 | Input not a JSON object, malformed, or oversized | The expectation and the limit. | 2 |
 | Transport options in source mode | `--address` and `--tls-*` require `--mode image`. | 2 |
 | Partial TLS material | The three options must be supplied together. | 2 |
-| `--credential` with `--address`/`--tls-*` | The CLI supplies credentials only to runtimes it starts. | 2 |
+| `--credential` with `--address`/`--tls-*` | [syntara-plugin](glossary.md#syntara-plugin) supplies credentials only to [runtime-server](glossary.md#runtime-server) instances it starts. | 2 |
 | Inline credential value | The three sources, and why an inline value is refused. | 2 |
 | Unknown credential name | The recipes reachable through the step type's integration type. | 2 |
 | Credential fails its schema | Each violated field and constraint, never the value. | 2 |
@@ -544,7 +545,7 @@ Every failure prints the problem and the next command. The complete map:
 | Two sources reading standard input | Which options collided, and the alternatives. | 2 |
 | Target is platform-runner | Declarative targets cannot run locally; see `inspect`. | 2 |
 | Step type module fails to import | The exception with its file and line, then `validate`. | 1 |
-| openssl missing for the managed container | Install openssl, or pass `--address` to a runtime you started. | 1 |
+| openssl missing for the managed container | Install openssl, or pass `--address` to a [runtime-server](glossary.md#runtime-server) you started. | 1 |
 | Workload container exits before health | Its exit status and last log lines, then `--mode source`. | 1 |
 | Image address unreachable | The address, then start-the-image or `--address`. | 1 |
 | ABI mismatch | The supported ABI, then rebuild the image. | 1 |
@@ -554,11 +555,11 @@ Every failure prints the problem and the next command. The complete map:
 
 ## Using the template with an AI assistant
 
-The command is deterministic and AI-free, but it is designed to pair with one.
+The [syntara-plugin](glossary.md#syntara-plugin) command is deterministic and AI-free, but it is designed to pair with one.
 A productive loop:
 
-1. `syntara-plugin run TARGET > input.json` to get the schema-shaped template.
-2. `syntara-plugin inspect` to read the full manifest, including descriptions
+1. [`syntara-plugin run TARGET > input.json`](glossary.md#syntara-plugin) to get the schema-shaped template.
+2. [`syntara-plugin inspect`](glossary.md#syntara-plugin) to read the full manifest, including descriptions
    and the output contract.
 3. Ask your assistant to fill the template using both, stating the business
    context (which repository, which environment, which identifiers).
@@ -566,6 +567,6 @@ A productive loop:
    command line.
 5. Rerun `run`; the validator reports anything the assistant got wrong.
 
-The CLI never invents business values: JSON Schema can prove structural
+The [syntara-plugin](glossary.md#syntara-plugin) never invents business values: JSON Schema can prove structural
 validity, not business validity, so execution always requires your explicit,
 reviewed input.

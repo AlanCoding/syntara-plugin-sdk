@@ -5,7 +5,7 @@ This directory is the language-neutral source of truth for the Syntara Plugin SD
 - `schemas/` contains versioned JSON Schema documents shared by every SDK.
 - `fixtures/` contains valid and invalid conformance examples shared by every SDK.
 - `proto/` contains the language-neutral `ContainerService` ABI source shared
-  by plugin workload runtimes and the Execution Plane.
+  by [runtime-server](../docs/glossary.md#runtime-server) and [ep-worker](../docs/glossary.md#ep-worker).
 
 The `http-operation.schema.json` contract defines the deliberately small,
 data-only HTTP operation format for a `platform-runner` action: a method,
@@ -27,8 +27,8 @@ constrained context contract.
 
 A `ContainerWorkloadRequest` contains a work item and a policy snapshot. The
 work item's `credentialHandles` are opaque platform-side references; they are
-not sent to the workload. The request carries no credential leases, delivery
-paths, or secret values. The Execution Plane resolves callback requests within
+not sent to [runtime-server](../docs/glossary.md#runtime-server). The request carries no credential leases, delivery
+paths, or secret values. The [ep-worker](../docs/glossary.md#ep-worker) integration resolves callback requests within
 the attempt as described in [ADR 0011](../.sdlc/adrs/0011-credential-callback.md).
 The runtime workload-request fixtures cover this shape and rejection of the
 legacy file-lease field.
@@ -52,7 +52,7 @@ unsupported contract versions, and duplicate identities. It is a local
 conformance corpus only: it neither contacts a registry nor verifies OCI
 signatures, persists source state, installs a plugin, or starts a workload.
 
-`syntara-plugin-contracts` ships this corpus with its schemas. Python consumers
+[`syntara-plugin-contracts`](../docs/glossary.md#syntara-plugin-contracts) ships this corpus with its schemas. Python consumers
 use `load_fixture_bundle()` to load its manifest-listed documents and verify the
 fixture-content digest before running their own smoke checks. Consumers in
 other languages consume the same files from the released contract bundle.
@@ -87,13 +87,13 @@ checkout of this repository.
 
 The JSON Schemas are the normative durable artifact and work-item contracts.
 The protobuf defines the `syntara.container/v1alpha1` in-container ABI. An
-invocation is a bidirectional stream: after the start message, the workload
-may request a declared CredentialRecipe ID. The host resolves it within the
-current attempt and returns a bounded JSON object in a dedicated sensitive
+invocation is a bidirectional stream: after the start message, [runtime-server](../docs/glossary.md#runtime-server)
+may request a declared CredentialRecipe ID. The invocation-scoped credential
+handler resolves the request and returns a bounded JSON object in a dedicated sensitive
 response; credential values never appear in business events, inputs, or
 runtime context. Requests and responses are correlated by invocation and
-request IDs. The host must authenticate the workload and provide transport
-confidentiality (mutual TLS in production). This replaces the earlier Execute
+request IDs. The [ep-worker](../docs/glossary.md#ep-worker) or [syntara-plugin](../docs/glossary.md#syntara-plugin) process must authenticate [runtime-server](../docs/glossary.md#runtime-server)
+and provide transport confidentiality (mutual TLS in production). This replaces the earlier Execute
 protocol under the same ABI identifier. Old `v1alpha1` peers are incompatible,
 and Health cannot distinguish the two protocols. See
 [ADR 0011](../.sdlc/adrs/0011-credential-callback.md).
@@ -120,18 +120,18 @@ category identifies the broad failure class; the code identifies its stable,
 machine-readable reason. `retryable` communicates whether retrying may succeed.
 
 `spec.output` remains the schema for the successful business result, never for
-the wrapper. The separate `spec.error` schema is optional. When present, the
-runtime validates the entire error object against that schema and the SDK base
+the wrapper. The separate `spec.error` schema is optional. When present, [syntara-plugin-contracts](../docs/glossary.md#syntara-plugin-contracts)
+validates the entire error object against that schema and the SDK base
 schema, and the declared schema may add step type-specific fields. When absent, the
 SDK uses a closed fallback schema that accepts only the base fields; custom
 step type-specific fields require a declared `spec.error`. A failed container result
 carries the complete error object and the canonical digest of the effective
 error schema. If an error, including an input-validation error, does not satisfy
 the effective schema, no valid wrapper exists. A wrapper cannot represent an
-invocation that produced no valid outcome. In that case the runtime emits a
+invocation that produced no valid outcome. In that case [runtime-server](../docs/glossary.md#runtime-server) emits a
 `ContainerFailure` instead: its `outcome` is `not_started`, `not_completed`, or
 `unknown`. `not_started` means execution did not begin; `not_completed` means
-execution began and is known not to have completed; `unknown` means the runtime
+execution began and is known not to have completed; `unknown` means [runtime-server](../docs/glossary.md#runtime-server)
 cannot determine whether execution completed. These values describe execution
 completion knowledge, not retryability. A `ContainerFailure` is not a deliberate
 step type result and carries no `StandardOutputWrapper`.
@@ -141,12 +141,12 @@ The wrapper schema does not redefine protobuf transport fields. The
 events; any transport mapping must preserve the distinction between deliberate
 failure and no valid outcome.
 
-The Execute server can send a version 1 `LogBatch` notification immediately
+The [runtime-server](../docs/glossary.md#runtime-server) can send a version 1 `LogBatch` notification immediately
 before its terminal outcome. The [protobuf](proto/syntara_plugin/runtime/protocol/container.proto)
 defines its event fields, allowed values, bounds, and overflow behavior. The
 batch is one-way, separate from credential responses, and requires no
-acknowledgment. Peers that reject unknown server messages must be updated before
-workloads use logging; Health does not distinguish this addition under the
-existing ABI identifier. Host consumers receive validated batches as
+acknowledgment. Peers that reject unknown messages from [runtime-server](../docs/glossary.md#runtime-server) must be updated before
+[runtime-server](../docs/glossary.md#runtime-server) sends logs; Health does not distinguish this addition under the
+existing ABI identifier. The [ep-worker](../docs/glossary.md#ep-worker) or [syntara-plugin](../docs/glossary.md#syntara-plugin) process receives validated batches as
 `ContainerLogBatch` events from `ContainerClient.stream()`, alongside progress
 and the terminal result. See [ADR 0013](../.sdlc/adrs/0013-toolbox-logging.md).

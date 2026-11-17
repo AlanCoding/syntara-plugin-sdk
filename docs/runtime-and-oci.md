@@ -18,7 +18,7 @@ The plugin artifact is the declarative, inspectable release. A workload image
 is a separate OCI image containing author-owned executable code. In the
 multi-image flow, the plugin descriptor carries a logical workload name and
 the RuntimeBinding maps that name to one or more image options pinned by
-`repository@sha256:...`. The Execution Plane must use the exact image digest
+`repository@sha256:...`. The [ep-worker](glossary.md#ep-worker) must use the exact image digest
 resolved by the platform; it must not accept a workflow-supplied image URI.
 Legacy single-image descriptors may still carry their digest directly. New
 multi-image releases should use RuntimeBindings so an image security update
@@ -39,47 +39,48 @@ The corresponding runtime work-item JSON shape is in
 The Python helper implementation is in
 [`container.py`](../sdks/python/packages/contracts/src/syntara_plugin/runtime/container.py).
 
-The Application Binary Interface (ABI) is the boundary between an Execution
-Plane launcher and a workload. The `syntara.container/v1alpha1` bidirectional
-invocation stream carries non-secret inputs and business events. For a
-credential read, the workload sends the declared CredentialRecipe ID as a
-logical name. The Execution Plane resolves that name within the current
-attempt and returns a bounded JSON object in a separate sensitive response;
-credential IDs and references are never sent to the workload. `ContainerClient`
-accepts a `credential_handler` per execution or stream, so the host can bind
-each resolver to its own attempt. The channel must authenticate both peers
-and protect confidentiality (mTLS in production).
+The Application Binary Interface (ABI) connects [ep-worker](glossary.md#ep-worker) or [syntara-plugin](glossary.md#syntara-plugin)
+to [runtime-server](glossary.md#runtime-server). The `syntara.container/v1alpha1` bidirectional invocation
+stream carries non-secret inputs and business events. For a credential read,
+[runtime-server](glossary.md#runtime-server) sends the declared CredentialRecipe ID as a logical name.
+`ContainerClient` in [syntara-plugin-contracts](glossary.md#syntara-plugin-contracts) accepts a `credential_handler`
+per execution or stream. The supplied handler resolves the name within the
+invocation's authority and returns a bounded JSON object in a separate sensitive
+response. Credential IDs and references are never sent to [runtime-server](glossary.md#runtime-server).
+The SDK defines the callback contract; availability of production credential
+resolution depends on the Execution Plane integration. The channel must
+authenticate both peers and protect confidentiality (mTLS in production).
 
 Each credential handler receives a `CredentialRequestContext` with the
 declared name, invocation ID, cancellation signal, and monotonic deadline.
 Use `remaining_seconds` to bound network and operation timeouts, and observe
 `cancellation` while waiting on work. `ContainerClient` invokes the handler on
 the thread consuming the Execute stream and does not own a resolver executor
-or queue. The Execution Plane or local runner owns resolver concurrency and
+or queue. The [ep-worker](glossary.md#ep-worker) or [syntara-plugin](glossary.md#syntara-plugin) process owns resolver concurrency and
 queue limits. Python cannot stop handler code that ignores its cancellation
-signal or deadline. The synchronous runtime separately admits at most 16
+signal or deadline. The synchronous `ContainerRuntimeService` implementation separately admits at most 16
 active invocation worker pairs across the process. Call the synchronous
-`ContainerRuntimeService.shutdown()` during server teardown; it signals
+`ContainerRuntimeService.shutdown()` during teardown of the embedded service; it signals
 cancellation and waits up to one second for owned workers. Arbitrary blocked
 Python step handlers cannot be preempted.
 
-The async `AsyncContainerRuntimeService` used by the image runtime owns a
+The async `AsyncContainerRuntimeService` used by [runtime-server](glossary.md#runtime-server) owns a
 per-service pool of eight daemon step workers by default. A running handler
 keeps its service capacity slot until it returns, even after cancellation or a
 timeout. Shutdown signals cancellation and stops new work, but cannot preempt
 a blocked handler. The daemon workers do not prevent the Python process from
 exiting.
 
-A host may close its send stream while awaiting the terminal event. The step
+The [ep-worker](glossary.md#ep-worker) or [syntara-plugin](glossary.md#syntara-plugin) process may close its send stream while awaiting the terminal event. The step
 continues, but credential reads cannot complete after that closure. An invalid
 follow-up message processed before the terminal event is committed cancels the
 invocation and produces a cancellation failure. Later messages may be ignored.
-On shutdown, active invocations may finish during the server's grace period.
+On shutdown, active invocations may finish during the [runtime-server](glossary.md#runtime-server) grace period.
 
 The generic `ContainerWorkloadRequest` carries its work item and policy
 snapshot without credential leases or secret file paths. Its work item contains
-opaque `credentialHandles` for platform use; these are not sent to the
-workload. The platform owns how an attempt's callback is resolved.
+opaque `credentialHandles` for platform use; these are not sent to
+[runtime-server](glossary.md#runtime-server). The platform owns how an attempt's callback is resolved.
 
 Credential values must never appear in business output, status, errors, or
 logs. Do not put values in inputs or runtime context. See
@@ -88,7 +89,7 @@ failure semantics.
 
 ### Runtime adapters and workload images
 
-The SDK does not publish a universal base image that contains an SDK runtime.
+The SDK does not publish a universal base image containing [runtime-server](glossary.md#runtime-server).
 The shared boundary is the versioned container ABI; each runtime adapter
 provides its own self-contained workload-image recipe. This avoids maintaining
 a polyglot image and avoids requiring one base image per supported language.
@@ -121,7 +122,7 @@ of the language-neutral runtime config envelope. The adapter imports
 takes no arguments and returns a non-empty `StepBindings` object. Write it as
 a one-line delegation to `load_plugin_bindings`, which loads the packaged
 `plugin.yaml` and binds every custom-runner step type through its installed
-manifest (see [Typed Python step types](#typed-python-step-types)); the server rejects
+manifest (see [Typed Python step types](#typed-python-step-types)); [runtime-server](glossary.md#runtime-server) rejects
 implementation-derived descriptors when it starts:
 
 ```python
@@ -185,7 +186,7 @@ selected installed binding, preventing a referencing step type from validating
 against a different contract than its implementation.
 Each entry point must import a typed `BaseStep` class matching that exact
 executable installed binding from the factory. Missing, malformed, duplicate, or
-inconsistent data prevents server startup. This file is bootstrap data only: it
+inconsistent data prevents [runtime-server](glossary.md#runtime-server) startup. This file is bootstrap data only: it
 does not contain invocation IDs, input, timeout, credentials,
 or runtime context. Those per-invocation values are supplied in the gRPC
 `Execute` request. Health advertises only the registered revisions, and Execute
@@ -203,52 +204,45 @@ outside this SDK boundary.
 The checked-in [Existing step types](../examples/existing-step) prototype exercises
 this path for Action, Control, and Trigger. `make test-integration` builds its
 plugin wheel, installs it with the Python contracts distribution, and invokes
-all three manifest-declared entry points over the container ABI. The current
-standalone Execution Plane still vendors the older `syntara.node.v1` protocol;
-until that service implements the bidirectional `syntara.container/v1alpha1`
-callback protocol, this repository proves
-the SDK adapter path but does not claim end-to-end Execution Plane dispatch.
-Automation Orchestrator's workflow selection and platform-owned runners remain
-separate platform responsibilities.
+all three manifest-declared entry points over the container ABI. This proves the SDK adapter path, not an end-to-end deployment of the
+Execution Plane. The [ep-worker](glossary.md#ep-worker) integration must use compatible
+[syntara-plugin-contracts](glossary.md#syntara-plugin-contracts) protocol bindings. Syntara's workflow selection and
+execution placement remain separate platform responsibilities.
 
-The workload image starts the SDK runtime server as its entry point:
+The workload image starts [runtime-server](glossary.md#runtime-server) as its entry point:
 
 ```sh
 python -m syntara_plugin.runtime.server
 ```
 
-The `syntara-plugin-runtime-server` console script runs the same `main()`. The
-server reads its runtime config from `SYNTARA_RUNTIME_CONFIG` and its listener
-settings from the `SYNTARA_RUNTIME_GRPC_*` variables. Authors never write or
-start their own gRPC server: the SDK runtime server is the only server in the
-image, and it owns input validation, execution dispatch, and the container
-ABI. [Existing step types](../examples/existing-step) shows the base image recipe:
-the `Containerfile` entry point and the mounted TLS material.
-`syntara-plugin build --with-workload` adds the registration manifest the
-server requires at startup (see
+The [`syntara-plugin-runtime-server`](glossary.md#runtime-server) console script runs the same `main()`.
+The [runtime-server](glossary.md#runtime-server) reads its configuration from `SYNTARA_RUNTIME_CONFIG`
+and its listener settings from the `SYNTARA_RUNTIME_GRPC_*` variables.
+The [runtime-server](glossary.md#runtime-server) owns input validation, execution dispatch, and the container
+ABI. [Existing step types](../examples/existing-step) shows the image recipe:
+the `Containerfile` entrypoint and mounted TLS material. The build includes the
+registration manifest required by [runtime-server](glossary.md#runtime-server) at startup (see
 [Installed revision mapping](#installed-revision-mapping)).
 
-> **Warning:** Do not start a separate gRPC server or write your own listener
-> code: the SDK runtime server opens and configures the image's listener
-> itself. Do not hard-code step type identities. A hand-written server
-> bypasses the runtime's validation and its mutual TLS requirement, and a
-> hard-coded identity drifts from the packaged manifest contract.
+> Use [runtime-server](glossary.md#runtime-server) to configure the image's listener rather than writing
+> separate listener code. Do not hard-code step type identities: doing so bypasses
+> validation or lets identities drift from the packaged manifest contract.
 
-The server listens on `127.0.0.1:50051` by default. Override the address with
+The [runtime-server](glossary.md#runtime-server) listens on `127.0.0.1:50051` by default. Override the address with
 `SYNTARA_RUNTIME_GRPC_ADDRESS`; every TCP listener requires mutual
 TLS, including loopback. Supply all three of `SYNTARA_RUNTIME_GRPC_TLS_CERT`,
 `SYNTARA_RUNTIME_GRPC_TLS_KEY`, and `SYNTARA_RUNTIME_GRPC_TLS_CLIENT_CA` when
 TLS is enabled. These values are mounted file paths, never PEM data or private
 key contents.
 
-`syntara-plugin run --mode image` is a supported client for such a runtime: it
-connects through the SDK's `ContainerClient`, verifies the ABI and advertised
+With [`syntara-plugin run --mode image`](glossary.md#syntara-plugin), [syntara-plugin](glossary.md#syntara-plugin) connects to
+[runtime-server](glossary.md#runtime-server) through `ContainerClient` from [syntara-plugin-contracts](glossary.md#syntara-plugin-contracts), verifies the ABI and advertised
 type identities over `Health`, executes one invocation, and prints the result.
 See [Running locally](running-locally.md) for the full workflow, including the
-client-side TLS options.
+[syntara-plugin](glossary.md#syntara-plugin) TLS options.
 
 The **container ABI** is the versioned gRPC/protobuf contract that the
-Execution Plane and a step type container use to exchange execution requests,
+[ep-worker](glossary.md#ep-worker) and [runtime-server](glossary.md#runtime-server) use to exchange execution requests,
 progress, results, and cancellation. It is not a CPU ABI. The current contract
 is defined in
 [`container.proto`](../contracts/proto/syntara_plugin/runtime/protocol/container.proto)
@@ -321,8 +315,8 @@ assigns a UTC timestamp. Attributes are JSON objects; the optional event name
 is a stable identifier. Invalid records and records exceeding the contract's
 bounds are dropped without failing the step. Container execution sends one
 bounded batch immediately before its terminal outcome. This is not live
-streaming and delivery is not guaranteed if the workload cannot send that
-outcome. The local runner writes the same records as JSON lines through its
+streaming and delivery is not guaranteed if [runtime-server](glossary.md#runtime-server) cannot send that
+outcome. The [syntara-plugin](glossary.md#syntara-plugin) process writes the same records as JSON lines through its
 scrubbed diagnostic stderr channel.
 
 The helper does not inspect, redact, or scrub log records. Do not put
@@ -335,7 +329,7 @@ for the exact limits.
 ### Credential access
 
 For an Action, Control, or Trigger, the installed `integrationType` and its linked
-`credentialTypes` define which recipe identifiers the step may request. The host supplies a provider for
+`credentialTypes` define which recipe identifiers the step may request. The configured `CredentialProvider` supplies access to
 approved bindings; a supplied name never grants permission by itself.
 A custom `CredentialProvider` must return a fresh `ScopedCredentialProvider`
 from `restrict(names, on_read)`. The view retains only the named bindings,
@@ -360,7 +354,7 @@ units. If a scan cannot finish within those bounds, the SDK reports
 size or output complexity to stay within the limits. The SDK cannot redact logs emitted by step code, so
 step authors must not log returned values. The SDK does not resolve production
 credential IDs or implement a vault. A Python step is not sandboxed by this
-accessor; the host must authorize each invocation and enforce process isolation.
+accessor; invocation authorization and process isolation remain deployment responsibilities.
 
 `CredentialRecipe` and `IntegrationType` Pydantic views validate and serialize
 the existing v1alpha1 authoring documents; the canonical JSON Schemas remain
@@ -455,7 +449,7 @@ mismatches between the descriptor and the Python class, and attempts to bind a p
 driver (such as `http.v1`) as a Python implementation. `StepExecutor` repeats
 the implementation and category checks before raw-input validation, so a
 directly constructed `StepBinding` cannot bypass them. `StepBindings` is a local
-SDK lookup table, not the platform registration database. Runtime startup maps
+SDK lookup table, not the platform registration database. The [runtime-server](glossary.md#runtime-server) startup maps
 the platform's resolved revisions to these existing installed bindings.
 Pydantic models are implementation types, not replacement manifests. For an
 installed custom-runner step type, the canonical installed manifest schema is the
@@ -521,7 +515,7 @@ result = invoke(
 custom-runner step type. The component loading the installed plugin metadata must supply an
 authorized document. For the complete factory that supplies the installed
 manifest and its assets, see `load_plugin_bindings` and the
-[Existing step types](../examples/existing-step) example. The SDK runtime cannot
+[Existing step types](../examples/existing-step) example. The [syntara-plugin-contracts](glossary.md#syntara-plugin-contracts) library cannot
 independently verify remote or cryptographic provenance, but it records
 opaque provenance for the exact factory-created manifest and descriptor
 objects. `StepBindings` accepts
@@ -530,7 +524,7 @@ implementation-derived descriptors for authoring validation, while
 supported custom-runner step type kinds execute only through the factory-created
 identity and canonical installed-schema binding.
 
-The runtime owns the `StandardOutputWrapper` and `ErrorResult` result types.
+The [syntara-plugin-contracts](glossary.md#syntara-plugin-contracts) library owns the `StandardOutputWrapper` and `ErrorResult` result types.
 Invalid input produces a nonzero error result when it satisfies the effective
 error schema; the implementation hook is not called. JSON Schema
 `default` values are annotations, so the registered Pydantic model supplies the
@@ -554,7 +548,7 @@ declared `spec.output` schema. A nonzero status is still a valid result and
 carries the complete structured error JSON and the canonical digest of the
 effective error schema. The SDK base requires a category, code, message, and
 retryability value. When `spec.error` is declared, its schema may add
-step type-specific fields and the runtime validates errors against both schemas.
+step type-specific fields and [syntara-plugin-contracts](glossary.md#syntara-plugin-contracts) validates errors against both schemas.
 When `spec.error` is absent, the SDK uses a closed fallback schema that accepts
 only the base fields; custom fields require a declared `spec.error`.
 An error that fails either schema produces no valid wrapper, including an
@@ -585,7 +579,7 @@ first use, so steps run and test where the transport libraries are absent.
 ### Container adapter
 
 `step_registry_from_bindings(bindings)` builds a local container `StepRegistry`
-keyed by binding identity. The server startup path instead keys the handlers by
+keyed by binding identity. The [runtime-server](glossary.md#runtime-server) startup path instead keys the handlers by
 the resolved revisions. The adapter converts each
 `ContainerInvocation` into an `ExecutionContext` (sharing the same cooperative
 cancellation event), calls `runtime.invoke`, and maps the returned wrapper to a
@@ -603,18 +597,18 @@ the canonical digest of the declared output schema; successful business results
 are validated against that schema. An `outputSchemaDigest` in runtime context
 is accepted only when it matches that schema; a mismatch is an ABI violation.
 
-The adapter accepts a host-supplied `ResultObjectStore`. `runtime.invoke`
+The adapter accepts a supplied `ResultObjectStore`. `runtime.invoke`
 performs transport-independent output-schema and canonical-JSON validation;
 the adapter applies the container ABI's 1 MiB inline limit and externalizes
 larger valid results through the object store. Authors never import
 `ContainerInvocation` to write or test a step type.
 
-On the client, `ContainerClient.execute_wrapped(invocation)` returns the SDK's
+In [syntara-plugin-contracts](glossary.md#syntara-plugin-contracts), `ContainerClient.execute_wrapped(invocation)` returns the
 `StandardOutputWrapper`, including the original status message and error metadata.
 `execute()` and `stream()` continue to expose the transport result and its output
 schema digest. `standard_output_from_container_result(result)` also converts an
 already received result. When a result carries an `object_reference`, pass
-`resolve_object_reference=` to either wrapper API: the host callback receives the
+`resolve_object_reference=` to either wrapper API: the supplied callback receives the
 opaque reference and returns the retrieved business result as a JSON object. A
 missing resolver, invalid resolved object, or resolver exception raises a safe
 error without exposing resolver details; inline and resolved values are checked
@@ -623,7 +617,7 @@ terminal transport `Failure` still raises `ContainerRemoteError` and is never
 converted to a deliberate step type failure.
 
 For a step type-specific error contract, pass the trusted `error_schema=` to either
-wrapper API. The client verifies its digest and validates the complete error
+wrapper API. The `ContainerClient` implementation verifies its digest and validates the complete error
 before reconstruction. Without that argument it uses the closed, base-fields-only
 fallback schema, so custom fields require a declared `spec.error`. Authors can
 supply step type-specific fields with `StepFailure(...,
@@ -631,8 +625,8 @@ error_result=ErrorResult(category="dependency", code="REMOTE_REJECTED",
 message="Rejected", retryable=True, requestId="request-1"))`.
 They can also subclass `ErrorResult` to declare step type-specific fields.
 Preserve an upstream `requestId` in declared step type-specific error fields when
-it helps troubleshoot the provider call. The host associates a received log batch with its invocation; do not invent a
-second execution identifier.
+it helps troubleshoot the provider call. The [ep-worker](glossary.md#ep-worker) or [syntara-plugin](glossary.md#syntara-plugin) process associates a received log batch with
+its invocation; do not invent a second execution identifier.
 
 ### Installed revision mapping
 
@@ -677,8 +671,7 @@ needed data already lives. The SDK does not implement them.
   enabled, verify the index and referenced artifacts against the configured
   trust policy. Deploy
   images by digest. The registration manifest and resolved execution data carry the
-  step revision IDs, entry points, ABIs, and schema digests; the runtime
-  server cross-checks them against the installed bindings at startup and
+  step revision IDs, entry points, ABIs, and schema digests; [runtime-server](glossary.md#runtime-server) cross-checks them against the installed bindings at startup and
   refuses to start on any mismatch. Each step revision ID digests the full
   compiled target, including its metadata, so metadata integrity is covered
   by the revision check.
@@ -715,10 +708,10 @@ reference. The registry administrator controls mirroring; the plugin author
 does not hard-code a deployment mirror in the manifest.
 
 Catalogs are discovery indexes, not the source of truth for an artifact.
-`syntara-plugin publish` creates or updates the configured index by default;
+[`syntara-plugin publish`](glossary.md#syntara-plugin) creates or updates the configured index by default;
 set `publish.updateCatalog: false` only for a staged release. Use
-`syntara-plugin catalog update` for release administration. If its mutable tag is lost, use
-`syntara-plugin catalog recover` with Syntara's last accepted immutable index
+[`syntara-plugin catalog update`](glossary.md#syntara-plugin) for release administration. If its mutable tag is lost, use
+[`syntara-plugin catalog recover`](glossary.md#syntara-plugin) with Syntara's last accepted immutable index
 digest; this continues the trusted chain instead of replaying generation one.
 See the [user guide](user-guide.md) for the operational commands and [build
 settings reference](build-settings.md) for catalog defaults.

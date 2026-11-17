@@ -5,7 +5,7 @@ versioned declaration of step types in the action, control, and trigger categori
 integration types,
 credential recipes, documentation, and—when needed—one or more custom runner workloads.
 
-The SDK gives plugin authors one public command: `syntara-plugin`.
+The SDK gives plugin authors one public command: [`syntara-plugin`](docs/glossary.md#syntara-plugin).
 
 ## Start here
 
@@ -40,8 +40,8 @@ syntara-plugin build
 syntara-plugin inspect ./dist/my-plugin.oci.tar
 ```
 
-`init` defaults to a platform-runner action, which Syntara's managed runner
-executes. It also supports scaffolding and running a Python custom-runner
+`init` defaults to a platform-runner action, which uses a Syntara-managed
+implementation. It also supports scaffolding and running a Python custom-runner
 Action locally:
 
 ```sh
@@ -49,7 +49,7 @@ syntara-plugin init ./my-runner --namespace acme --runner custom-runner
 syntara-plugin run --manifest ./my-runner/plugin.yaml --input '{"resource": "example"}'
 ```
 
-The generated runtime loads the packaged plugin manifests through the
+The generated [runtime-server](docs/glossary.md#runtime-server) loads the packaged plugin manifests through the
 packaged-manifest binding helper. See [Getting started](docs/getting-started.md)
 for local tests and image preparation.
 
@@ -102,6 +102,8 @@ syntara-plugin validate examples/hello-world/plugin.yaml \
 
 ## Documentation
 
+- [Glossary](docs/glossary.md) — actor processes, libraries, and plugin terms.
+
 - [Installation](docs/installation.md) — install a released SDK or prepare a source checkout.
 - [Getting started](docs/getting-started.md) — first plugin and the four core commands.
 - [Step type authoring and composition guide](docs/authoring-guide.md): the end-to-end authoring workflow for Action, Control, and Trigger steps, and composition best practices.
@@ -143,11 +145,11 @@ facing workflow changes.
 
 The SDK supports offline plugin packaging, bounded OCI publication with
 default catalog publication, catalog recovery, and a developer-preview Podman workload build.
-`syntara-plugin run --credential` delivers a declared credential to a local
-run as a read-only file, the shape production will use; see
-[ADR 0009](.sdlc/adrs/0009-local-credential-delivery.md).
-Artifact signing, catalog refresh automation, the typed accessor a Step reads
-a credential through, and end-to-end Execution Plane delivery of credentials
-to custom runners remain follow-on work. See
+[`syntara-plugin run --credential`](docs/glossary.md#syntara-plugin) supplies
+credentials through invocation-scoped callbacks to a local
+[runtime-server](docs/glossary.md#runtime-server); see
+[ADR 0011](.sdlc/adrs/0011-credential-callback.md).
+Artifact signing, catalog refresh automation, and end-to-end credential delivery
+by [ep-worker](docs/glossary.md#ep-worker) remain follow-on work. See
 [ADR 0006](.sdlc/adrs/0006-deferred-custom-runner-build-ux.md) for the
 custom-runner preview boundary.

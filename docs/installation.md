@@ -1,6 +1,6 @@
 # Installation
 
-The released Python distribution installs the `syntara-plugin` command and its
+The released Python distribution installs the [`syntara-plugin`](glossary.md#syntara-plugin) command and its
 contract dependencies together.
 
 ## Install a released SDK
@@ -21,7 +21,7 @@ syntara-plugin --help
 
 Use `uv tool upgrade syntara-plugin-sdk` or your normal Python dependency
 management process to update the SDK. The installed package is for authors;
-you do not need a Syntara server, Podman, or registry to validate and package a
+you do not need a running Syntara installation, Podman, or registry to validate and package a
 credentialless plugin.
 
 To opt in to an alpha or beta release, install prereleases explicitly:
@@ -35,7 +35,8 @@ python -m pip install --pre syntara-plugin-sdk
 ## Work from the repository
 
 For an unreleased SDK checkout, clone the repository and install all local
-packages in editable mode. The SDK command depends on the contracts package,
+packages in editable mode. The [syntara-plugin](glossary.md#syntara-plugin) command depends on
+[syntara-plugin-contracts](glossary.md#syntara-plugin-contracts),
 which provides the shared contract and runtime APIs:
 
 ```sh

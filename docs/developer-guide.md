@@ -21,7 +21,7 @@ uv sync --all-groups --active --inexact
 python -m pytest sdks/python/tests examples -q
 ```
 
-Run the CLI from the checkout after syncing the environment:
+Run the [syntara-plugin](glossary.md#syntara-plugin) from the checkout after syncing the environment:
 
 ```sh
 syntara-plugin --help
@@ -37,8 +37,8 @@ make test-integration
 ```
 
 The test builds a temporary image from the pinned UBI Python base, installs the
-SDK runtime and the checked-in [Existing step types](../examples/existing-step)
-plugin from local wheels, starts the server with mutual TLS, and invokes its
+[syntara-plugin-contracts](glossary.md#syntara-plugin-contracts) library and the checked-in [Existing step types](../examples/existing-step)
+plugin from local wheels, starts [runtime-server](glossary.md#runtime-server) with mutual TLS, and invokes its
 Action, Control, and Trigger steps over gRPC. It does not require the backend,
 Kubernetes, or the Execution Plane.
 
@@ -49,9 +49,9 @@ Kubernetes, or the Execution Plane.
 | [`contracts/schemas/v1alpha1`](../contracts/schemas/v1alpha1) | Normative plugin, catalog, and runtime JSON Schemas. |
 | [`contracts/proto`](../contracts/proto) | Versioned container/runtime protobuf ABI. |
 | [`contracts/fixtures`](../contracts/fixtures) | Cross-language conformance fixtures. |
-| [`sdks/python/packages/sdk`](../sdks/python/packages/sdk) | Authoring compiler, CLI, packaging, registry, catalog, settings behavior, and the local testing harness (`syntara_plugin.testing`). |
+| [`sdks/python/packages/sdk`](../sdks/python/packages/sdk) | Authoring compiler, [syntara-plugin](glossary.md#syntara-plugin), packaging, registry, catalog, settings behavior, and the local testing harness (`syntara_plugin.testing`). |
 | [`sdks/python/packages/contracts`](../sdks/python/packages/contracts) | Shared contracts distribution used by the SDK and Execution Plane. |
-| [`sdks/python/tests`](../sdks/python/tests) | Unit and CLI contract tests. |
+| [`sdks/python/tests`](../sdks/python/tests) | Unit and [syntara-plugin](glossary.md#syntara-plugin) contract tests. |
 | [`examples`](../examples) | End-user examples that must remain runnable. |
 
 ## Change contracts deliberately

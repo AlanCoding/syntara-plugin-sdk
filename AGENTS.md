@@ -75,6 +75,8 @@ the failing test first, the fix that turns it green second.
 
 ### Docs
 
+- Prefer the process names in [the glossary](docs/glossary.md) over new terms.
+
 Direct and to the point, with a few runnable examples where they earn their
 place; follow the approach, section flow, and tone of
 [docs/authoring-guide.md](docs/authoring-guide.md). Run only the documented

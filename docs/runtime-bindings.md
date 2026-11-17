@@ -136,7 +136,7 @@ are relative to `dist`, so the complete directory can be moved to another
 publisher machine. The SDK requires release archives to stay under `dist` and
 rejects symlinked or parent-traversing archive paths. Build does not publish to
 a registry. Inspect the release files, then run the selected option through the
-container gRPC runtime:
+[runtime-server](glossary.md#runtime-server):
 
 ```sh
 syntara-plugin build plugin.yaml \
@@ -158,7 +158,7 @@ different bytes: when its contract changes, choose a new `--output` (or
 `build.artifactOutput`) path. An identical rebuild can reuse the existing
 archive.
 
-Publish the prepared release inventory. The CLI verifies the local files and
+Publish the prepared release inventory. The [syntara-plugin](glossary.md#syntara-plugin) verifies the local files and
 digests, publishes in dependency order, and prints the immutable references:
 
 ```sh

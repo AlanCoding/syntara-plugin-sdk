@@ -2,8 +2,8 @@
 
 The repository publishes two Python packages as one versioned release train:
 
-1. `syntara-plugin-contracts`
-2. `syntara-plugin-sdk`
+1. [`syntara-plugin-contracts`](glossary.md#syntara-plugin-contracts)
+2. [`syntara-plugin-sdk`](glossary.md#syntara-plugin-sdk)
 
 The contracts distribution contains the contract and runtime APIs and their
 dependencies. The SDK pins the matching contracts release.
@@ -19,7 +19,7 @@ GitHub.
    | Setting | Value |
    | --- | --- |
    | Owner | `syntara-orchestration` |
-   | Repository | `syntara-plugin-sdk` |
+   | Repository | [`syntara-plugin-sdk`](glossary.md#syntara-plugin-sdk) |
    | Workflow | `publish.yml` |
    | Environment | `pypi` |
 

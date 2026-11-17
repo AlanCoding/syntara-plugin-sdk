@@ -6,8 +6,8 @@ running Syntara instance.
 
 ## Install
 
-Install the released CLI or prepare an unreleased checkout by following
-[installation](installation.md), then confirm `syntara-plugin --help` works.
+Install the released [syntara-plugin](glossary.md#syntara-plugin) or prepare an unreleased checkout by following
+[installation](installation.md), then confirm [`syntara-plugin --help`](glossary.md#syntara-plugin) works.
 
 ## Create your first plugin
 

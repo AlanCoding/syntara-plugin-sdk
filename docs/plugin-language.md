@@ -19,6 +19,8 @@ Every plugin inventory and target document starts with this envelope.
 
 ## Terms and execution model
 
+Use the [glossary](glossary.md) for process names, library names, and plugin terms.
+
 A **step type** is a concrete catalog capability such as **HTTP Request**,
 **Create GitHub Issue**, or **Launch AAP Job Template**. Every step type has
 one lowercase **category**: `action`, `control`, or `trigger`. `Action` category step
@@ -75,7 +77,7 @@ Schema: [`action.schema.json`](../contracts/schemas/v1alpha1/action.schema.json)
 | `spec.runtime.kind` | Required execution owner: `platform-runner` or `custom-runner`. |
 | `spec.runtime.implementation` | Required for `platform-runner`; a registered step type reference in `<namespace>.<plugin>.<step>@version` form, with a SemVer 2.0.0 version (including optional prerelease and build metadata), such as `example.hello-world.hello@0.1.0`. Forbidden for `custom-runner`. |
 | `spec.runtime.operation` | Optional HTTP operation metadata for the built-in `syntara.http.request@<version>` platform runner: an inert method, relative path, and optional mappings. Forbidden for `custom-runner` and all other implementations. |
-| `spec.runtime.entryPoint` | Required for `custom-runner`; a `module:Class` handle for the step type implementation inside the digest-pinned runner image. It is an implementation identity, not a placement decision: Syntara policy may run it in the selected host execution path or delegate it to the Execution Plane. |
+| `spec.runtime.entryPoint` | Required for `custom-runner`; a `module:Class` handle for the step type implementation inside the digest-pinned runner image. It is an implementation identity, not a placement decision: Syntara policy chooses placement; the entry point does not identify a process or execution location. |
 | `spec.domain` | Optional qualified domain identifier that groups an Action step type independently of its runner. |
 | `spec.integrationType` | Optional qualified integration type required by the step type. A workflow selects an instance of this type, not raw credentials. |
 | `spec.input` | Required input JSON Schema source. |
@@ -222,7 +224,7 @@ whose digest does not match its content.
 The compiler also emits `spec.plugin_revision_id`, `spec.sdkVersion`, and a
 `step_revision_id` on each Action, Control, and Trigger target. Authors do not
 write these fields. IDs are lowercase `sha256:` digests. `sdkVersion` is the
-installed `syntara-plugin-sdk` version expressed as SemVer; for example, the
+installed [`syntara-plugin-sdk`](glossary.md#syntara-plugin-sdk) version expressed as SemVer; for example, the
 Python distribution version `0.1.0a1` compiles to `0.1.0-alpha.1`.
 
 The versioned `syntara.compiled-contract/v1` projection is hashed using SHA-256

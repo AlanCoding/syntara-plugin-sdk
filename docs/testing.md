@@ -20,9 +20,9 @@ Everything below is also available as plain importable functions; the pytest
 fixtures are thin wrappers over them.
 
 For a single ad-hoc invocation without a pytest suite, use
-`syntara-plugin run`; see [Running locally](running-locally.md). Source mode
+[`syntara-plugin run`](glossary.md#syntara-plugin); see [Running locally](running-locally.md). Source mode
 runs the same compile, install, drift-check, and container-adapter path this
-harness uses, from the CLI.
+harness uses, from the [syntara-plugin](glossary.md#syntara-plugin).
 
 ## The four fixtures
 
@@ -72,10 +72,9 @@ outcome = invoke_step(binding, {"title": "Broken build"}, context=ctx)
 - `invoke_step` runs the direct path: input validation, the typed
   `BaseStep.execute()` operation (currently delegated to the author-defined
   `run()` hook), output-schema and canonical-JSON validation, then
-  `StandardOutputWrapper` construction. No `ContainerInvocation` or gRPC
-  server is used. The helper calls public `runtime.invoke`.
+  `StandardOutputWrapper` construction. No [runtime-server](glossary.md#runtime-server) is used. The helper calls public `runtime.invoke`.
 - `invoke_step_in_container` runs the same registered implementation over a
-  real in-process gRPC server on `127.0.0.1` through the container adapter.
+  [runtime-server](glossary.md#runtime-server) embedded in the test process on `127.0.0.1`, through the container adapter.
   The adapter calls public `runtime.invoke`; authors never construct a
   `ContainerInvocation`. Public direct and gRPC callers share this invocation
   function. The test helper's direct path calls `StepExecutor` itself. Two
@@ -248,7 +247,7 @@ returns the same diagnostics as a tuple when a test needs to assert on them.
 
 ## Generated tests
 
-`syntara-plugin test-init` scaffolds a test module per custom-runner step type
+[`syntara-plugin test-init`](glossary.md#syntara-plugin) scaffolds a test module per custom-runner step type
 target of every kind (Action, Control, and Trigger) from the compiled
 manifest and its schemas: the entry point, one valid case, derived invalid
 cases, and the standard property tests. It also writes a shared
